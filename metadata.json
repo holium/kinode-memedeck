@@ -1,7 +1,7 @@
 {
     "name": "memedeck",
-    "description": "",
-    "image": "",
+    "description": "Meme a better future with frens.",
+    "image": "https://memedeck.xyz/_next/static/media/logo-wide.572ec4d3.svg",
     "properties": {
         "package_name": "memedeck",
         "current_version": "0.1.0",

@@ -1,0 +1,16 @@
+[
+    {
+        "process_name": "memedeck",
+        "process_wasm_path": "/memedeck.wasm",
+        "on_exit": "Restart",
+        "request_networking": true,
+        "request_capabilities": [
+            "http_server:distro:sys",
+            "http_client:distro:sys",
+            "sqlite:distro:sys",
+            "vfs:distro:sys"
+        ],
+        "grant_capabilities": [],
+        "public": true
+    }
+]

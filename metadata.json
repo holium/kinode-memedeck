@@ -1,0 +1,17 @@
+{
+    "name": "memedeck",
+    "description": "",
+    "image": "",
+    "properties": {
+        "package_name": "memedeck",
+        "current_version": "0.1.0",
+        "publisher": "meme-deck.os",
+        "mirrors": [],
+        "code_hashes": {
+            "0.1.0": ""
+        }
+    },
+    "website": "https://github.com/holium/kinode-memedeck",
+    "external_url": "",
+    "animation_url": ""
+}

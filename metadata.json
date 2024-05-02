@@ -4,11 +4,12 @@
     "image": "https://media.memedeck.xyz/memes/memedeck-app-logo.png",
     "properties": {
         "package_name": "memedeck",
-        "current_version": "0.1.0",
+        "current_version": "0.1.1",
         "publisher": "meme-deck.os",
         "mirrors": ["meme-deck.os"],
         "code_hashes": {
-            "0.1.0": "09928a05dda8b1447890ea185d814543d30ac9938c22951923f990f92d70b568"
+            "0.1.0": "09928a05dda8b1447890ea185d814543d30ac9938c22951923f990f92d70b568",
+            "0.1.1": ""
         }
     },
     "website": "https://github.com/holium/kinode-memedeck",

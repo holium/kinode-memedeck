@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 use kinode_process_lib::{
     await_message, call_init, println, Address,
-    Message, get_blob, http,
+    Message, get_blob, http, Request,
     http::{
         serve_ui,
         HttpServerRequest, send_response, StatusCode,

@@ -9,7 +9,7 @@
         "mirrors": ["meme-deck.os"],
         "code_hashes": {
             "0.1.0": "09928a05dda8b1447890ea185d814543d30ac9938c22951923f990f92d70b568",
-            "0.1.1": ""
+            "0.1.1": "df022bffac4475ac60b477df11fe2c2c30ba573b927c8b1d2134322b1ba1bdfe"
         }
     },
     "website": "https://github.com/holium/kinode-memedeck",

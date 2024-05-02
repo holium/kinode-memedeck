@@ -38,6 +38,7 @@ const FRAGMENT: &AsciiSet = &CONTROLS
     .add(b'&')
     .add(b'%')
     .add(b'?');
+const ICON: &str = include_str!("icon");
 
 wit_bindgen::generate!({
     path: "wit",
@@ -51,6 +52,23 @@ call_init!(init);
 
 fn init(our: Address) {
     println!("memedeck: started");
+
+    // add ourselves to the homepage
+    Request::to(("our", "homepage", "homepage", "sys"))
+        .body(
+            serde_json::json!({
+                "Add": {
+                    "label": "MemeDeck",
+                    "icon": ICON,
+                    "path": "/", // just our root
+                }
+            })
+            .to_string()
+            .as_bytes()
+            .to_vec(),
+        )
+        .send()
+        .unwrap();
 
     let private_paths = vec!["/", "/_next/static/*", "/favicon.ico", "/home", "/library", "/library/saved", "/library/uploads", "/search"];
     //let public_paths = vec!["/deck/*"];

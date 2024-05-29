@@ -70,7 +70,7 @@ fn init(our: Address) {
         .send()
         .unwrap();
 
-    let private_paths = vec!["/", "/_next/static/*", "/favicon.ico", "/home", "/library", "/library/saved", "/library/uploads", "/search"];
+    let private_paths = vec!["/", "/_next/static/*", "/favicon.ico", "/home", "/library", "/library/saved", "/library/uploads", "/explore", "/studio"];
     //let public_paths = vec!["/deck/*"];
     let _ = serve_ui(&our, "ui", true, false, private_paths);
     //let _ = serve_ui(&our, "ui", false, false, public_paths);

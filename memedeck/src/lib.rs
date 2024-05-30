@@ -14,30 +14,21 @@ use kinode_process_lib::{
     },
     vfs::open_file,
 };
-use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
-mod types;
-use types::{
-    CreateMemeRequest,
-    PublicAddress, MemeDeckState,
-    TwitterProfile,
+use crate::twitter::types::{
     KinodeLoginInfo,
+    default_percent_enc,
+    TwitterProfile,
+    CreateMemeRequest,
 };
+mod types;
+use types::{PublicAddress, MemeDeckState};
 
+pub mod twitter;
+
+//const APP_NAME: &str = "memedeck:memedeck:holium.os";
+//const MEMEDECK_UI: &str = "https://memedeck.xyz";
+// const MEMEDECK_API: &str = "http://localhost:8081";
 const MEMEDECK_API: &str = "https://api.memedeck.xyz";
-/// https://url.spec.whatwg.org/#fragment-percent-encode-set
-const FRAGMENT: &AsciiSet = &CONTROLS
-    .add(b' ')
-    .add(b'"')
-    .add(b'<')
-    .add(b'>')
-    .add(b'`')
-    .add(b'/')
-    .add(b':')
-    .add(b'=')
-    .add(b'+')
-    .add(b'&')
-    .add(b'%')
-    .add(b'?');
 const ICON: &str = include_str!("icon");
 
 wit_bindgen::generate!({
@@ -505,9 +496,8 @@ fn toggle_block(state: &mut MemeDeckState, r_path: &str) -> anyhow::Result<()> {
     })
 }
 
-fn proxy(to: &str, method: http::Method, body: Vec<u8>, mut req_headers: HashMap<String, String>, mut headers: HashMap<String, String>) -> anyhow::Result<()> {
+fn proxy(to: &str, method: http::Method, body: Vec<u8>, req_headers: HashMap<String, String>, mut headers: HashMap<String, String>) -> anyhow::Result<()> {
     println!("proxying {to}");
-    req_headers.insert("host".to_string(), "api.memedeck.xyz".to_string());
     println!("{req_headers:?}");
     match send_request_await_response(
         method, 
@@ -624,6 +614,3 @@ fn url_pre(our: &Address) -> String {
     format!("/{}:{}", our.process(), our.package_id())
 }
 
-fn default_percent_enc(string: &str) -> String {
-    utf8_percent_encode(string, FRAGMENT).to_string()
-}

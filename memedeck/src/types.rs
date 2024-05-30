@@ -1,78 +1,8 @@
 use serde::{Serialize, Deserialize};
+use crate::twitter::types::{TwitterAccessToken, TwitterProfile, TwitterRequestToken};
 use kinode_process_lib::{
     set_state, get_typed_state, Address, sqlite,
 };
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct TwitterRequestToken {
-    pub oauth_callback_confirmed: bool,
-    pub oauth_token: String,
-    pub oauth_token_secret: String,
-}
-impl TwitterRequestToken {
-    pub fn new() -> TwitterRequestToken {
-        TwitterRequestToken {
-            oauth_callback_confirmed: false,
-            oauth_token: String::new(),
-            oauth_token_secret: String::new(),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct TwitterAccessToken {
-    pub user_id: u64,
-    pub screen_name: String,
-    pub oauth_token: String,
-    pub oauth_token_secret: String,
-}
-impl TwitterAccessToken {
-    pub fn new() -> TwitterAccessToken {
-        TwitterAccessToken {
-            oauth_token: String::new(),
-            oauth_token_secret: String::new(),
-            screen_name: String::new(),
-            user_id: 0,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
-pub struct TwitterProfile {
-    pub name: Option<String>,
-    pub location: Option<String>,
-    pub description: Option<String>,
-    // pub followers_count: u64,
-    // pub friends_count: u64,
-    // pub favourites_count: u64,
-    // pub statuses_count: u64,
-    pub profile_image_url: Option<String>,
-    pub profile_image_url_https: Option<String>,
-    pub profile_background_image_url_https: Option<String>,
-    pub screen_name: Option<String>,
-    pub id_str: String,
-    // pub protected: bool,
-    // pub lang: Option<String>,
-    // pub created_at: String,
-    // pub status: Option<TwitterPost>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct KinodeLoginInfo {
-    pub token: String,
-    pub verifier: String,
-    pub kinode_location: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct CreateMemeRequest {
-    pub filename: String,
-    pub filetype: String,
-    pub title: Option<String>,
-    pub caption: Option<String>,
-    pub source_url: Option<String>,
-    pub bytes: Option<Vec<u8>>,
-}
 
 #[derive(Deserialize)]
 pub struct PublicAddress {

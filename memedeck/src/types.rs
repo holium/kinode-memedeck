@@ -83,6 +83,14 @@ pub struct ComposedUploadRequest {
     pub width: u32,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct FaceswapUploadRequest {
+    pub filename: Option<String>,
+    pub filetype: String,
+    pub bytes: Vec<u8>,
+    pub is_face: bool,
+}
+
 #[derive(Deserialize)]
 pub struct PublicAddress {
     pub url: String

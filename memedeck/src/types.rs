@@ -79,6 +79,7 @@ pub struct ComposedUploadRequest {
     pub filetype: String,
     pub bytes: Option<Vec<u8>>,
     pub height: u32,
+    pub source_url: Option<String>,
     pub width: u32,
 }
 

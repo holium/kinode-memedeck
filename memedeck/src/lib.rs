@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use serde_json::{self, Value};
 use uuid::Uuid;
 use kinode_process_lib::{
     await_message, call_init, println, Address,
@@ -71,9 +72,10 @@ fn init(our: Address) {
         .send()
         .unwrap();
 
-    let private_paths = vec!["/", "/_next/static/*", "/favicon.ico", "/home", "/library", "/library/saved", "/library/uploads", "/search"];
-    //let public_paths = vec!["/deck/*"];
+    let private_paths = vec!["/", "/_next/static/*", "/home", "/library", "/library/saved", "/library/uploads", "/search"];
+    let public_paths = vec!["/images", "/favicon.ico"];
     let _ = serve_ui(&our, "ui", true, false, private_paths);
+    let _ = serve_ui(&our, "ui", false, false, public_paths);
     //let _ = serve_ui(&our, "ui", false, false, public_paths);
     //let _ = bind_http_path("/", true, false);
     let _ = bind_http_path("/set_public_address", true, false);
@@ -232,7 +234,13 @@ fn handle_http_server_request(
                             ))
                         }
                         "/v1/memes" => create_meme(state),
-                        "/v1/memes/:meme_id/composed-upload" => composed_upload(state, request.url_params().get("meme_id").unwrap()),
+                        // POST /v1/memes/meme:68af2305_6adb_49a0_a58d_6f21037b92fc/composed-upload
+                        _ if { r_path.starts_with("/v1/memes/") && r_path.ends_with("/composed-upload") } => {
+                            let parts: Vec<&str> = r_path.split("/").collect();
+                            let meme_id = parts[3];
+                            let meme_id_str = meme_id.to_string();
+                            return composed_upload(state, &meme_id_str);
+                        }
                         _ if { r_path.starts_with("/v1/") } => {
                             let blob = match get_blob() {
                                 Some(blob) => blob.bytes,
@@ -382,17 +390,20 @@ fn delete_meme(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Result<()
 }
 
 fn composed_upload(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Result<()> {
-    println!("composed_upload");
+    println!("composed_upload for meme_id: {meme_id}");
     let Some(blob) = get_blob() else {
         return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![]));
     };
+
+    // Deserialize the JSON payload into ComposedUploadRequest
+    let upload_data: ComposedUploadRequest = serde_json::from_slice(&blob.bytes)?;
+
     // Extract the fields from the request body
-    let mut upload_data = serde_json::from_slice::<ComposedUploadRequest>(&blob.bytes)?;
     let width = upload_data.width;
     let height = upload_data.height;
     let filetype = upload_data.filetype.clone();
 
-    // 1. generate unique filename, save the file to vfs
+    // 1. Generate unique filename, save the file to vfs
     let filename = format!("images/{}", Uuid::new_v4().to_string().replace("-", "_"));
 
     let bytes = match upload_data.bytes.clone() {
@@ -400,18 +411,31 @@ fn composed_upload(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Resul
         None => return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![])),
     };
 
-    // 2. bind_static_ to make the file publically accessible
+    // 2. Bind_static_ to make the file publically accessible
     bind_http_static_path(&filename, false, false, Some(upload_data.filetype.clone()), bytes)?;
 
-    // 3. POST it to the api, so that it can save the metadata to the graph
+    let memedeck_path = "memedeck:memedeck:meme-deck.os";
+    let public_url = format!("{}/{}/{}", state.public_address, memedeck_path, filename);
+    // Convert upload_data to serde_json::Value for manipulation
+    let mut upload_data_value = serde_json::to_value(&upload_data)?;
+    // Remove the `bytes` field
+    if let Some(map) = upload_data_value.as_object_mut() {
+        map.remove("bytes");
+    }
+    // Set the `source_url` field
+    if let Some(map) = upload_data_value.as_object_mut() {
+        map.insert("source_url".to_string(), Value::String(public_url.clone()));
+    }
+    // Serialize the JSON payload back
+    let payload_body = serde_json::to_vec(&upload_data_value)?;
+
+    // 4. POST it to the API, so that it can save the metadata to the graph
     let mut api_headers = HashMap::new();
     api_headers.insert("content-type".to_string(), "application/json".to_string());
     api_headers.insert("cookie".to_string(), state.api_cookie.clone().unwrap_or("".into()));
-    println!("sending to api");
 
-    // Add upload_data, filetype, width, height to the payload_body
-    let mut payload_body = serde_json::to_vec(&upload_data)?;
-    payload_body.extend_from_slice(format!("&filetype={filetype}&width={width}&height={height}", filetype=filetype, width=width, height=height).as_bytes());
+    let payload_body_str = String::from_utf8_lossy(&payload_body).to_string();
+    println!("sending to api: {payload_body_str}");
 
     match send_request_await_response(
         http::Method::POST,
@@ -423,7 +447,9 @@ fn composed_upload(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Resul
         Ok(resp) => {
             let mut response_headers = HashMap::new();
             response_headers.insert("content-type".to_string(), "application/json".to_string());
-            // 4. proxy/return the response of the api to the client
+            // 4. Proxy/return the response of the API to the client
+            let resp_string = String::from_utf8_lossy(resp.body()).to_string();
+            println!("resp_string {resp_string}");
             Ok(send_response(resp.status(), Some(response_headers), resp.body().clone()))
         }
         Err(_) => Ok(send_response(StatusCode::BAD_REQUEST, None, vec![])),

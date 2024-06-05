@@ -20,6 +20,7 @@ mod types;
 use types::{
     CreateMemeRequest,
     ComposedUploadRequest,
+    FaceswapUploadRequest,
     PublicAddress, MemeDeckState,
     TwitterProfile,
     KinodeLoginInfo,
@@ -86,8 +87,9 @@ fn init(our: Address) {
     let _ = bind_http_path("/twitter_callback", false, false);
     let _ = bind_http_path("/v1/memes", true, false);
     let _ = bind_http_path("/v1/memes/:meme_id", true, false);
-    let _ = bind_http_path("/v1/memes/:meme_id/panel/:panel_id", true, false);
     let _ = bind_http_path("/v1/memes/:meme_id/composed-upload", true, false);
+    let _ = bind_http_path("/v1/memes/:meme_id/panel/:panel_id", true, false);
+    let _ = bind_http_path("/v1/memes/:meme_id/panel/:panel_id/faceswap-upload", true, false);
     let _ = bind_http_path("/v1/*", true, false);
     let _ = bind_http_path("/deck/edit/:deck_id", true, false);
     let _ = bind_http_path("/deck/:deck_id", true, false);
@@ -242,6 +244,14 @@ fn handle_http_server_request(
                             let meme_id = parts[3];
                             let meme_id_str = meme_id.to_string();
                             return composed_upload(state, &meme_id_str);
+                        }
+                        _ if { r_path.starts_with("/v1/memes/") && r_path.ends_with("/faceswap-upload") } => {
+                            let parts: Vec<&str> = r_path.split("/").collect();
+                            let meme_id = parts[3];
+                            let meme_id_str = meme_id.to_string();
+                            let panel_id = parts[5];
+                            let panel_id_str = panel_id.to_string();
+                            return faceswap_upload(state, &meme_id_str, &panel_id_str);
                         }
                         _ if { r_path.starts_with("/v1/") } => {
                             let blob = match get_blob() {
@@ -400,11 +410,6 @@ fn composed_upload(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Resul
     // Deserialize the JSON payload into ComposedUploadRequest
     let mut upload_data: ComposedUploadRequest = serde_json::from_slice(&blob.bytes)?;
 
-    // Extract the fields from the request body
-    let width = upload_data.width;
-    let height = upload_data.height;
-    let filetype = upload_data.filetype.clone();
-
     // 1. Generate unique filename, save the file to vfs
     let filename = format!("images/{}", Uuid::new_v4().to_string().replace("-", "_"));
     upload_data.filename = Some(filename.clone());
@@ -437,6 +442,60 @@ fn composed_upload(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Resul
     match send_request_await_response(
         http::Method::POST,
         url::Url::parse(&format!("{MEMEDECK_API}/v1/memes/{meme_id}/composed-upload"))?,
+        Some(api_headers),
+        10000,
+        payload_body
+    ) {
+        Ok(resp) => {
+            let mut response_headers = HashMap::new();
+            response_headers.insert("content-type".to_string(), "application/json".to_string());
+            // 4. Proxy/return the response of the API to the client
+            let resp_string = String::from_utf8_lossy(resp.body()).to_string();
+            println!("resp_string {resp_string}");
+            Ok(send_response(resp.status(), Some(response_headers), resp.body().clone()))
+        }
+        Err(_) => Ok(send_response(StatusCode::BAD_REQUEST, None, vec![])),
+    }
+}
+
+fn faceswap_upload(state: &mut MemeDeckState, meme_id: &String, panel_id: &String) -> anyhow::Result<()> {
+    println!("faceswap_upload for meme_id: {meme_id}, panel_id: {panel_id}");
+    let Some(blob) = get_blob() else {
+        return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![]));
+    };
+
+    // Deserialize the JSON payload into ComposedUploadRequest
+    let mut upload_data: FaceswapUploadRequest = serde_json::from_slice(&blob.bytes)?;
+
+    // 1. Generate unique filename, save the file to vfs
+    let filename = format!("images/{}", Uuid::new_v4().to_string().replace("-", "_"));
+    upload_data.filename = Some(filename.clone());
+    
+    // 2. Make the file publically accessible
+    let bytes = upload_data.bytes.clone();
+    bind_http_static_path(&filename, false, false, Some(upload_data.filetype.clone()), bytes)?;
+
+    // Remove the `bytes` field since we've uploaded to Kinode
+    let mut upload_data_value = serde_json::to_value(&upload_data)?;
+    if let Some(map) = upload_data_value.as_object_mut() {
+        map.remove("bytes");
+    }
+
+    // Serialize the JSON payload back
+    let payload_body = serde_json::to_vec(&upload_data_value)?;
+
+    // 3. POST it to the API, so that it can save the metadata to the graph
+    // Add headers
+    let mut api_headers = HashMap::new();
+    api_headers.insert("content-type".to_string(), "application/json".to_string());
+    api_headers.insert("cookie".to_string(), state.api_cookie.clone().unwrap_or("".into()));
+
+    let payload_body_str = String::from_utf8_lossy(&payload_body).to_string();
+    println!("sending to api: {payload_body_str}");
+
+    match send_request_await_response(
+        http::Method::POST,
+        url::Url::parse(&format!("{MEMEDECK_API}/v1/memes/{meme_id}/panel/{panel_id}/faceswap-upload"))?,
         Some(api_headers),
         10000,
         payload_body

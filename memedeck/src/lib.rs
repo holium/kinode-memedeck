@@ -80,6 +80,7 @@ fn init(our: Address) {
     let _ = bind_http_path("/twitter_callback", false, false);
     let _ = bind_http_path("/v1/memes", true, false);
     let _ = bind_http_path("/v1/memes/:meme_id", true, false);
+    let _ = bind_http_path("/v1/memes/:meme_id/panel/:panel_id", true, false);
     let _ = bind_http_path("/v1/*", true, false);
     let _ = bind_http_path("/deck/edit/:deck_id", true, false);
     let _ = bind_http_path("/deck/:deck_id", true, false);
@@ -249,6 +250,24 @@ fn handle_http_server_request(
                             println!("{:?}", request);
                             toggle_block(state, r_path)
                         }
+                        _ => Ok(send_response(StatusCode::NOT_FOUND, None, vec![]))
+                    }
+                }
+                "PUT" => {
+                    println!("PUT {r_path}");
+                    match b_path {
+                        _ if { r_path.starts_with("/v1/") } => {
+                            let blob = match get_blob() {
+                                Some(blob) => blob.bytes,
+                                None => vec![],
+                            };
+                            proxy(
+                                &format!("{MEMEDECK_API}{r_path}?{}", stringify_params(request.query_params())),
+                                http::Method::PUT, blob,
+                                req_h,
+                                headers.clone()
+                            )
+                        },
                         _ => Ok(send_response(StatusCode::NOT_FOUND, None, vec![]))
                     }
                 }

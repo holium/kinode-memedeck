@@ -237,7 +237,6 @@ fn handle_http_server_request(
                             ))
                         }
                         "/v1/memes" => create_meme(state),
-                        // POST /v1/memes/meme:68af2305_6adb_49a0_a58d_6f21037b92fc/composed-upload
                         _ if { r_path.starts_with("/v1/memes/") && r_path.ends_with("/composed-upload") } => {
                             let parts: Vec<&str> = r_path.split("/").collect();
                             let meme_id = parts[3];

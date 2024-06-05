@@ -74,6 +74,14 @@ pub struct CreateMemeRequest {
     pub bytes: Option<Vec<u8>>,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ComposedUploadRequest {
+    pub filetype: String,
+    pub bytes: Option<Vec<u8>>,
+    pub height: u32,
+    pub width: u32,
+}
+
 #[derive(Deserialize)]
 pub struct PublicAddress {
     pub url: String

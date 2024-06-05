@@ -418,13 +418,13 @@ fn composed_upload(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Resul
     bind_http_static_path(&filename, false, false, Some(upload_data.filetype.clone()), bytes)?;
 
     // Remove the `bytes` field since we've uploaded to Kinode
-    // let mut upload_data_value = serde_json::to_value(&upload_data)?;
-    // if let Some(map) = upload_data_value.as_object_mut() {
-    //     map.remove("bytes");
-    // }
+    let mut upload_data_value = serde_json::to_value(&upload_data)?;
+    if let Some(map) = upload_data_value.as_object_mut() {
+        map.remove("bytes");
+    }
 
     // Serialize the JSON payload back
-    let payload_body = serde_json::to_vec(&upload_data)?;
+    let payload_body = serde_json::to_vec(&upload_data_value)?;
 
     // 3. POST it to the API, so that it can save the metadata to the graph
     // Add headers

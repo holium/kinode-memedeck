@@ -18,6 +18,7 @@ use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 mod types;
 use types::{
     CreateMemeRequest,
+    ComposedUploadRequest,
     PublicAddress, MemeDeckState,
     TwitterProfile,
     KinodeLoginInfo,
@@ -81,6 +82,7 @@ fn init(our: Address) {
     let _ = bind_http_path("/v1/memes", true, false);
     let _ = bind_http_path("/v1/memes/:meme_id", true, false);
     let _ = bind_http_path("/v1/memes/:meme_id/panel/:panel_id", true, false);
+    let _ = bind_http_path("/v1/memes/:meme_id/composed-upload", true, false);
     let _ = bind_http_path("/v1/*", true, false);
     let _ = bind_http_path("/deck/edit/:deck_id", true, false);
     let _ = bind_http_path("/deck/:deck_id", true, false);
@@ -230,6 +232,7 @@ fn handle_http_server_request(
                             ))
                         }
                         "/v1/memes" => create_meme(state),
+                        "/v1/memes/:meme_id/composed-upload" => composed_upload(state, request.url_params().get("meme_id").unwrap()),
                         _ if { r_path.starts_with("/v1/") } => {
                             let blob = match get_blob() {
                                 Some(blob) => blob.bytes,
@@ -367,6 +370,55 @@ fn delete_meme(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Result<()
         Some(api_headers),
         10000,
         vec![],
+    ) {
+        Ok(resp) => {
+            let mut response_headers = HashMap::new();
+            response_headers.insert("content-type".to_string(), "application/json".to_string());
+            // 4. proxy/return the response of the api to the client
+            Ok(send_response(resp.status(), Some(response_headers), resp.body().clone()))
+        }
+        Err(_) => Ok(send_response(StatusCode::BAD_REQUEST, None, vec![])),
+    }
+}
+
+fn composed_upload(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Result<()> {
+    println!("composed_upload");
+    let Some(blob) = get_blob() else {
+        return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![]));
+    };
+    // Extract the fields from the request body
+    let mut upload_data = serde_json::from_slice::<ComposedUploadRequest>(&blob.bytes)?;
+    let width = upload_data.width;
+    let height = upload_data.height;
+    let filetype = upload_data.filetype.clone();
+
+    // 1. generate unique filename, save the file to vfs
+    let filename = format!("images/{}", Uuid::new_v4().to_string().replace("-", "_"));
+
+    let bytes = match upload_data.bytes.clone() {
+        Some(b) => b,
+        None => return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![])),
+    };
+
+    // 2. bind_static_ to make the file publically accessible
+    bind_http_static_path(&filename, false, false, Some(upload_data.filetype.clone()), bytes)?;
+
+    // 3. POST it to the api, so that it can save the metadata to the graph
+    let mut api_headers = HashMap::new();
+    api_headers.insert("content-type".to_string(), "application/json".to_string());
+    api_headers.insert("cookie".to_string(), state.api_cookie.clone().unwrap_or("".into()));
+    println!("sending to api");
+
+    // Add upload_data, filetype, width, height to the payload_body
+    let mut payload_body = serde_json::to_vec(&upload_data)?;
+    payload_body.extend_from_slice(format!("&filetype={filetype}&width={width}&height={height}", filetype=filetype, width=width, height=height).as_bytes());
+
+    match send_request_await_response(
+        http::Method::POST,
+        url::Url::parse(&format!("{MEMEDECK_API}/v1/memes/{meme_id}/composed-upload"))?,
+        Some(api_headers),
+        10000,
+        payload_body
     ) {
         Ok(resp) => {
             let mut response_headers = HashMap::new();

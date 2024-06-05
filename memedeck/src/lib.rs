@@ -26,6 +26,9 @@ use types::{
 };
 
 const MEMEDECK_API: &str = "https://api.memedeck.xyz";
+// const MEMEDECK_API: &str = "https://staging-api.memedeck.xyz";
+// const MEMEDECK_API: &str = "http://localhost:8080";
+
 /// https://url.spec.whatwg.org/#fragment-percent-encode-set
 const FRAGMENT: &AsciiSet = &CONTROLS
     .add(b' ')
@@ -339,7 +342,7 @@ fn create_meme(state: &mut MemeDeckState) -> anyhow::Result<()> {
             }
         }
     };
-    // 2. bind_static_ to make the file publically accessible
+    // 2. Make the file publically accessible
     bind_http_static_path(&filename, false, false, Some(upload_data.filetype.clone()), bytes)?;
     // 3. POST it to the api, so that it can save the metadata to the graph
     upload_data.filename = filename;
@@ -396,7 +399,7 @@ fn composed_upload(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Resul
     };
 
     // Deserialize the JSON payload into ComposedUploadRequest
-    let upload_data: ComposedUploadRequest = serde_json::from_slice(&blob.bytes)?;
+    let mut upload_data: ComposedUploadRequest = serde_json::from_slice(&blob.bytes)?;
 
     // Extract the fields from the request body
     let width = upload_data.width;
@@ -405,31 +408,26 @@ fn composed_upload(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Resul
 
     // 1. Generate unique filename, save the file to vfs
     let filename = format!("images/{}", Uuid::new_v4().to_string().replace("-", "_"));
-
+    upload_data.filename = Some(filename.clone());
+    
+    // 2. Make the file publically accessible
     let bytes = match upload_data.bytes.clone() {
         Some(b) => b,
         None => return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![])),
     };
-
-    // 2. Bind_static_ to make the file publically accessible
     bind_http_static_path(&filename, false, false, Some(upload_data.filetype.clone()), bytes)?;
 
-    let memedeck_path = "memedeck:memedeck:meme-deck.os";
-    let public_url = format!("{}/{}/{}", state.public_address, memedeck_path, filename);
-    // Convert upload_data to serde_json::Value for manipulation
-    let mut upload_data_value = serde_json::to_value(&upload_data)?;
-    // Remove the `bytes` field
-    if let Some(map) = upload_data_value.as_object_mut() {
-        map.remove("bytes");
-    }
-    // Set the `source_url` field
-    if let Some(map) = upload_data_value.as_object_mut() {
-        map.insert("source_url".to_string(), Value::String(public_url.clone()));
-    }
-    // Serialize the JSON payload back
-    let payload_body = serde_json::to_vec(&upload_data_value)?;
+    // Remove the `bytes` field since we've uploaded to Kinode
+    // let mut upload_data_value = serde_json::to_value(&upload_data)?;
+    // if let Some(map) = upload_data_value.as_object_mut() {
+    //     map.remove("bytes");
+    // }
 
-    // 4. POST it to the API, so that it can save the metadata to the graph
+    // Serialize the JSON payload back
+    let payload_body = serde_json::to_vec(&upload_data)?;
+
+    // 3. POST it to the API, so that it can save the metadata to the graph
+    // Add headers
     let mut api_headers = HashMap::new();
     api_headers.insert("content-type".to_string(), "application/json".to_string());
     api_headers.insert("cookie".to_string(), state.api_cookie.clone().unwrap_or("".into()));

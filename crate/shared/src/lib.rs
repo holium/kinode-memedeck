@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use kinode_process_lib::{
-    get_blob, Message, Request, Address,
+    //get_blob, Message,
+    Request, Address,
     http::{
         Method, StatusCode,
         HeaderMap, HeaderValue,
@@ -9,7 +10,7 @@ use kinode_process_lib::{
     },
 };
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
-use frankenstein::{ChatId, Message as TgMessage, SendMessageParams, UpdateContent};
+use frankenstein::{ChatId, Message as TgMessage, SendMessageParams};
 use telegram_interface::*;
 
 pub const TG_ADDRESS: (&str, &str, &str, &str) = ("our", "tg", "memedeck", "meme-deck.os");
@@ -42,9 +43,9 @@ pub enum WorkerRequest {
 }
 
 pub fn proxy(to: &str, method: Method, body: Vec<u8>, mut req_headers: HashMap<String, String>, mut headers: HashMap<String, String>) -> anyhow::Result<()> {
-    println!("proxying {to}");
+    //println!("proxying {to}");
     req_headers.insert("host".to_string(), "api.memedeck.xyz".to_string());
-    println!("{req_headers:?}");
+    //println!("{req_headers:?}");
     match send_request_await_response(
         method, 
         url::Url::parse(to).unwrap(),
@@ -54,7 +55,7 @@ pub fn proxy(to: &str, method: Method, body: Vec<u8>, mut req_headers: HashMap<S
     ) {
         Ok(resp) => {
             let body = resp.body();
-            println!("status: {:?}, headers: {:?}", resp.status(), resp.headers());
+            //println!("status: {:?}, headers: {:?}", resp.status(), resp.headers());
             match resp.status() {
                 StatusCode::OK => {
                     headers.remove("Content-Type");

@@ -57,7 +57,7 @@ fn init(our: Address) {
 }
 
 fn handle_message(
-    our: &Address,
+    _our: &Address,
     state: &mut WorkerState,
 ) -> anyhow::Result<()> {
     let message = await_message()?;
@@ -98,7 +98,6 @@ fn handle_message(
             ref body,
             ..
         } => {
-            println!("{source:?} {body:?}");
             req_api(state)?;
             set_timer(30_000, None); // 30 seconds from now
             Ok(())
@@ -113,7 +112,6 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
     headers.insert("Content-Type".to_string(), "application/json".to_string());
 
     let api_url = format!("{MEMEDECK_API}/v1/search?limit=2&start=0&interval=today&character_id={}&sort_by=recent", state.character);
-    println!("{api_url}");
 
     match send_request_await_response(
         Method::GET,
@@ -125,10 +123,11 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
         Ok(resp) => {
             let body = resp.body();
             let meme_search_response: MemeSearchResponse = serde_json::from_slice(body)?;
-            println!("{meme_search_response:?}");
+            //println!("{meme_search_response:?}");
             if meme_search_response.memes.len() > 0 {
                 let newest_meme = meme_search_response.memes[0].clone();
                 if !state.posted_memes.contains(&newest_meme.id) {
+                    println!("new meme found for {}, posting to telegram", state.character);
                     state.posted_memes.push(newest_meme.id.clone());
                     let msg = format!("user @{} created meme {}", newest_meme.creator_name, newest_meme.url);
                     send_bot_message(&msg, state.chat_id, &state.tg_address)?;

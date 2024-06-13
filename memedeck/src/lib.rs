@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 use kinode_process_lib::{
     await_message, call_init, println, Address, ProcessId,
-    Message, get_blob, http, Request, spawn, OnExit, Capability,
+    Message, get_blob, http, Request, spawn, OnExit,
     http::{
         serve_ui,
         HttpServerRequest, send_response, StatusCode,
@@ -102,12 +102,10 @@ fn handle_request(
     message: &Message,
 ) -> anyhow::Result<()> {
     let proc = message.source().process.clone();
-    println!("got something from process {:?}, and node {:?}", proc, message.source().node);
     if message.source().node == our.node && proc == "http_server:distro:sys"
     {
         handle_http_server_request(our, &message.body(), state)
     } else if message.source().node == our.node && proc.package_name == "terminal" && proc.publisher_node == "sys" {
-        println!("handling admin_request");
         handle_admin_request(our, &message.body(), state)
     } else if message.source().node != our.node {
         /*
@@ -151,7 +149,7 @@ fn handle_http_server_request(
             }
             match request.method()?.as_str() {
                 "GET" => {
-                    println!("GET {r_path}");
+                    //println!("GET {r_path}");
                     // Route to appropriate endpoint based on the path
                     match b_path {
                         "/twitter_callback" => get_oauth_callback(our, state, headers, request),
@@ -199,13 +197,13 @@ fn handle_http_server_request(
                             headers.clone()
                         ),
                         _ => {
-                            println!("unmatched path: {}", r_path);
+                            //println!("unmatched path: {}", r_path);
                             Ok(send_response(StatusCode::NOT_FOUND, None, vec![]))
                         }
                     }
                 }
                 "POST" => {
-                    println!("POST {r_path}");
+                    //println!("POST {r_path}");
                     match r_path {
                         "/set_public_address" => {
                             let Some(blob) = get_blob() else {
@@ -263,7 +261,7 @@ fn handle_http_server_request(
                     }
                 }
                 "PUT" => {
-                    println!("PUT {r_path}");
+                    //println!("PUT {r_path}");
                     match b_path {
                         _ if { r_path.starts_with("/v1/") } => {
                             let blob = match get_blob() {
@@ -281,7 +279,7 @@ fn handle_http_server_request(
                     }
                 }
                 "DELETE" => {
-                    println!("DELETE {r_path}");
+                    //println!("DELETE {r_path}");
                     match b_path {
                         "/v1/memes/:meme_id" => delete_meme(state, request.url_params().get("meme_id").unwrap()),
                         _ if { r_path.starts_with("/v1/") } => {
@@ -321,20 +319,18 @@ fn handle_admin_request(
         println!("Failed to parse admin request: {:?}", e);
         e
     })?;
-    println!("{admin_request:?}");
 
     match admin_request {
         AdminTerminalRequest::SetToken(s) => {
             let tg_bot_wasm_path = format!("{}/pkg/tg.wasm", our.package_id());
             // give spawned process both our caps, and grant http_client messaging.
-            let our_caps = our_capabilities();
             let http_client = ProcessId::from_str("http_client:distro:sys").unwrap();
             let process_id = spawn(
                 None,
                 &tg_bot_wasm_path,
                 OnExit::None,
-                our_caps,
-                vec![http_client],
+                our_capabilities(),
+                vec![http_client, "http_server:distro:sys".parse().unwrap()],
                 false,
             )?;
             let worker_address = Address {
@@ -360,7 +356,7 @@ fn handle_admin_request(
                 &format!("{}/pkg/worker.wasm", our.package_id()),
                 OnExit::None,
                 our_capabilities(),
-                vec!["http_client:distro:sys".parse().unwrap(), "timer:distro:sys".parse().unwrap()],
+                vec!["http_client:distro:sys".parse().unwrap(), "timer:distro:sys".parse().unwrap(), state.tg_process_address.clone().unwrap().process],
                 false,
             ) {
                 Ok(spawned_process_id) => spawned_process_id,
@@ -424,7 +420,6 @@ fn create_meme(state: &mut MemeDeckState) -> anyhow::Result<()> {
     let mut api_headers = HashMap::new();
     api_headers.insert("content-type".to_string(), "application/json".to_string());
     api_headers.insert("cookie".to_string(), state.api_cookie.clone().unwrap_or("".into()));
-    println!("sending to api");
     match send_request_await_response(
         http::Method::POST,
         url::Url::parse(&format!("{MEMEDECK_API}/v1/memes"))?,
@@ -468,7 +463,7 @@ fn delete_meme(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Result<()
 }
 
 fn composed_upload(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Result<()> {
-    println!("composed_upload for meme_id: {meme_id}");
+    //println!("composed_upload for meme_id: {meme_id}");
     let Some(blob) = get_blob() else {
         return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![]));
     };
@@ -503,7 +498,7 @@ fn composed_upload(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Resul
     api_headers.insert("cookie".to_string(), state.api_cookie.clone().unwrap_or("".into()));
 
     let payload_body_str = String::from_utf8_lossy(&payload_body).to_string();
-    println!("sending to api: {payload_body_str}");
+    //println!("sending to api: {payload_body_str}");
 
     match send_request_await_response(
         http::Method::POST,
@@ -517,7 +512,7 @@ fn composed_upload(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Resul
             response_headers.insert("content-type".to_string(), "application/json".to_string());
             // 4. Proxy/return the response of the API to the client
             let resp_string = String::from_utf8_lossy(resp.body()).to_string();
-            println!("resp_string {resp_string}");
+            //println!("resp_string {resp_string}");
             Ok(send_response(resp.status(), Some(response_headers), resp.body().clone()))
         }
         Err(_) => Ok(send_response(StatusCode::BAD_REQUEST, None, vec![])),
@@ -525,7 +520,7 @@ fn composed_upload(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Resul
 }
 
 fn faceswap_upload(state: &mut MemeDeckState, meme_id: &String, panel_id: &String) -> anyhow::Result<()> {
-    println!("faceswap_upload for meme_id: {meme_id}, panel_id: {panel_id}");
+    //println!("faceswap_upload for meme_id: {meme_id}, panel_id: {panel_id}");
     let Some(blob) = get_blob() else {
         return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![]));
     };
@@ -557,7 +552,7 @@ fn faceswap_upload(state: &mut MemeDeckState, meme_id: &String, panel_id: &Strin
     api_headers.insert("cookie".to_string(), state.api_cookie.clone().unwrap_or("".into()));
 
     let payload_body_str = String::from_utf8_lossy(&payload_body).to_string();
-    println!("sending to api: {payload_body_str}");
+    //println!("sending to api: {payload_body_str}");
 
     match send_request_await_response(
         http::Method::POST,
@@ -571,7 +566,7 @@ fn faceswap_upload(state: &mut MemeDeckState, meme_id: &String, panel_id: &Strin
             response_headers.insert("content-type".to_string(), "application/json".to_string());
             // 4. Proxy/return the response of the API to the client
             let resp_string = String::from_utf8_lossy(resp.body()).to_string();
-            println!("resp_string {resp_string}");
+            //println!("resp_string {resp_string}");
             Ok(send_response(resp.status(), Some(response_headers), resp.body().clone()))
         }
         Err(_) => Ok(send_response(StatusCode::BAD_REQUEST, None, vec![])),
@@ -584,7 +579,7 @@ fn get_oauth_callback(
     mut headers: HashMap<String, String>,
     request: IncomingHttpRequest,
 ) -> anyhow::Result<()> {
-    println!("starting kinode oauth callback to twitter");
+    //println!("starting kinode oauth callback to twitter");
     let params = request.query_params();
     match params.get("oauth_token") {
         None => Ok(send_response(StatusCode::BAD_REQUEST, None, vec![])),
@@ -598,7 +593,6 @@ fn get_oauth_callback(
             let mut api_headers: HashMap<String, String> = HashMap::new();
             api_headers.insert("content-type".into(), "application/json".into());
             let api_url = format!("{MEMEDECK_API}/v1/auth/twitter/kinode_callback");
-            println!("{api_url}");
             let (kinode_cookie, profile): (String, TwitterProfile) = match send_request_await_response(
                 http::Method::POST,
                 url::Url::parse(&api_url)?,
@@ -607,9 +601,7 @@ fn get_oauth_callback(
                 serde_json::to_vec(&payload)?
             ) {
                 Ok(resp) => {
-                    println!("{resp:?}");
                     let r_headers = resp.headers();
-                    println!("{r_headers:?}");
                     Ok((
                         r_headers.get("set-cookie").unwrap_or(&http::HeaderValue::from_static("no set-cookie")).to_str()?.to_string(),
                         serde_json::from_slice(resp.body())?
@@ -617,7 +609,7 @@ fn get_oauth_callback(
                 }
                 Err(e) => Err(anyhow::anyhow!("error: {}", e)),
             }?;
-            println!("api cookie: {kinode_cookie}");
+            //println!("api cookie: {kinode_cookie}");
             state.api_cookie = Some(format!("{};", kinode_cookie.split(";").next().unwrap_or("")));
             state.profile = Some(profile);
             state.save();

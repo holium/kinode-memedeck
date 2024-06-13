@@ -9,7 +9,8 @@
             "http_server:distro:sys",
             "http_client:distro:sys",
             "sqlite:distro:sys",
-            "vfs:distro:sys"
+            "vfs:distro:sys",
+            "terminal:terminal:sys"
         ],
         "grant_capabilities": [],
         "public": true

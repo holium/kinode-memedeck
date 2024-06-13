@@ -106,6 +106,8 @@ pub struct SavableMemeDeckState {
     pub blocked: Vec<String>,   // list of node ids
     pub public_address: String,
     pub api_cookie: Option<String>,
+    pub telegram_token: Option<String>,
+    pub tg_process_address: Option<Address>,
 }
 impl SavableMemeDeckState {
     pub fn save(&self) {
@@ -122,6 +124,8 @@ pub struct MemeDeckState {
     pub blocked: Vec<String>,   // list of node ids
     pub public_address: String,
     pub api_cookie: Option<String>,
+    pub telegram_token: Option<String>,
+    pub tg_process_address: Option<Address>,
     pub db: sqlite::Sqlite,
 }
 impl MemeDeckState {
@@ -135,6 +139,8 @@ impl MemeDeckState {
             blocked: self.blocked.clone(),
             public_address: self.public_address.clone(),
             api_cookie: self.api_cookie.clone(),
+            telegram_token: self.telegram_token.clone(),
+            tg_process_address: self.tg_process_address.clone(),
         }.save()
     }
 
@@ -149,6 +155,8 @@ impl MemeDeckState {
                 blocked: s.blocked,
                 public_address: s.public_address,
                 api_cookie: s.api_cookie,
+                telegram_token: s.telegram_token,
+                tg_process_address: s.tg_process_address,
                 db: sqlite::open(our.package_id(), "memedeck", None).expect("cant access sqlite db"),
             },
             None => MemeDeckState {
@@ -160,6 +168,8 @@ impl MemeDeckState {
                 blocked: Vec::new(),
                 public_address: String::new(),
                 api_cookie: None,
+                telegram_token: None,
+                tg_process_address: None,
                 db: sqlite::open(our.package_id(), "memedeck", None).expect("cant access sqlite db"),
             },
         }
@@ -178,5 +188,24 @@ impl From<&MemeDeckState> for MemeDeckConnections {
             blocked: state.blocked.clone(),
         }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum AdminTerminalRequest {
+    SetToken(String),
+    StartCharacterMonitorBot {
+        chat_id: i64,
+        character: String,
+    },
+    StopCharacterMonitorBot,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FrankensteinBotDetails {
+    pub first_name: String,
+    pub last_name: Option<String>,
+    pub username: Option<String>,
+    pub language_code: Option<String>,
+    pub can_join_groups: Option<bool>,
 }
 

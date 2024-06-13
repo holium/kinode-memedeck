@@ -1,9 +1,8 @@
 use std::collections::HashMap;
-use serde_json::{self, Value};
 use uuid::Uuid;
 use kinode_process_lib::{
-    await_message, call_init, println, Address,
-    Message, get_blob, http, Request,
+    await_message, call_init, println, Address, ProcessId,
+    Message, get_blob, http, Request, spawn, OnExit, Capability,
     http::{
         serve_ui,
         HttpServerRequest, send_response, StatusCode,
@@ -11,11 +10,11 @@ use kinode_process_lib::{
         bind_http_static_path,
         unbind_http_path,
         send_request_await_response, IncomingHttpRequest,
-        HeaderMap, HeaderValue,
     },
     vfs::open_file,
+    our_capabilities,
 };
-use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
+mod tg;
 mod types;
 use types::{
     CreateMemeRequest,
@@ -24,34 +23,16 @@ use types::{
     PublicAddress, MemeDeckState,
     TwitterProfile,
     KinodeLoginInfo,
+    AdminTerminalRequest,
 };
+use std::str::FromStr;
+use shared::{MEMEDECK_API, WorkerRequest, proxy, plain_hm, stringify_params};
 
-const MEMEDECK_API: &str = "https://api.memedeck.xyz";
-// const MEMEDECK_API: &str = "https://staging-api.memedeck.xyz";
-// const MEMEDECK_API: &str = "http://localhost:8080";
-
-/// https://url.spec.whatwg.org/#fragment-percent-encode-set
-const FRAGMENT: &AsciiSet = &CONTROLS
-    .add(b' ')
-    .add(b'"')
-    .add(b'<')
-    .add(b'>')
-    .add(b'`')
-    .add(b'/')
-    .add(b':')
-    .add(b'=')
-    .add(b'+')
-    .add(b'&')
-    .add(b'%')
-    .add(b'?');
 const ICON: &str = include_str!("icon");
 
 wit_bindgen::generate!({
-    path: "wit",
-    world: "process",
-    exports: {
-        world: Component,
-    },
+    path: "target/wit",
+    world: "process-v0",
 });
 
 call_init!(init);
@@ -120,9 +101,14 @@ fn handle_request(
     state: &mut MemeDeckState,
     message: &Message,
 ) -> anyhow::Result<()> {
-    if message.source().node == our.node && message.source().process == "http_server:distro:sys"
+    let proc = message.source().process.clone();
+    println!("got something from process {:?}, and node {:?}", proc, message.source().node);
+    if message.source().node == our.node && proc == "http_server:distro:sys"
     {
         handle_http_server_request(our, &message.body(), state)
+    } else if message.source().node == our.node && proc.package_name == "terminal" && proc.publisher_node == "sys" {
+        println!("handling admin_request");
+        handle_admin_request(our, &message.body(), state)
     } else if message.source().node != our.node {
         /*
          * TODO: actually implement node-to-node communications
@@ -326,6 +312,86 @@ fn handle_http_server_request(
     }
 }
 
+fn handle_admin_request(
+    our: &Address,
+    body: &[u8],
+    state: &mut MemeDeckState,
+) -> anyhow::Result<()> {
+    let admin_request = serde_json::from_slice::<AdminTerminalRequest>(body).map_err(|e| {
+        println!("Failed to parse admin request: {:?}", e);
+        e
+    })?;
+    println!("{admin_request:?}");
+
+    match admin_request {
+        AdminTerminalRequest::SetToken(s) => {
+            let tg_bot_wasm_path = format!("{}/pkg/tg.wasm", our.package_id());
+            // give spawned process both our caps, and grant http_client messaging.
+            let our_caps = our_capabilities();
+            let http_client = ProcessId::from_str("http_client:distro:sys").unwrap();
+            let process_id = spawn(
+                None,
+                &tg_bot_wasm_path,
+                OnExit::None,
+                our_caps,
+                vec![http_client],
+                false,
+            )?;
+            let worker_address = Address {
+                node: our.node.clone(),
+                process: process_id.clone(),
+            };
+            state.tg_process_address = Some(worker_address.clone());
+
+            tg::init_tg(&s, &worker_address)?;
+            state.telegram_token = Some(s);
+            state.save();
+            Ok(())
+        },
+
+        //m our@memedeck:memedeck:meme-deck.os '{"SetToken":"7270979454:AAEjH7mfC-ZVOimVDsAhWJw87g1PxQriMfc"}'
+        //m our@memedeck:memedeck:meme-deck.os '{"StartCharacterMonitorBot":{"chat_id":-4278984459,"character":"apu_apustaja"}}'
+        AdminTerminalRequest::StartCharacterMonitorBot { chat_id, character, } => {
+            // this function actually spawns the child process
+            let spawned_process_id: ProcessId = match spawn(
+                // name of the child process
+                Some("worker"),
+                // path to find the compiled Wasm file for the child process
+                &format!("{}/pkg/worker.wasm", our.package_id()),
+                OnExit::None,
+                our_capabilities(),
+                vec!["http_client:distro:sys".parse().unwrap(), "timer:distro:sys".parse().unwrap()],
+                false,
+            ) {
+                Ok(spawned_process_id) => spawned_process_id,
+                Err(e) => {
+                    panic!("couldn't spawn {e:?}");
+                }
+            };
+
+            let our_worker_address = Address {
+                node: our.node.clone(),
+                process: spawned_process_id,
+            };
+
+            let _resp = Request::new()
+                .body(serde_json::to_vec(&WorkerRequest::Initialize {
+                    chat_id,
+                    character,
+                    tg_address: state.tg_process_address.clone().unwrap_or(our.clone()),
+                    cookie: state.api_cookie.clone().unwrap_or("".into())
+                })?)
+                .target(&our_worker_address)
+                .send_and_await_response(5)??;
+            Ok(())
+        }
+
+        AdminTerminalRequest::StopCharacterMonitorBot => {
+            // TODO: kill the spawned_process
+            Ok(())
+        }
+    }
+}
 fn create_meme(state: &mut MemeDeckState) -> anyhow::Result<()> {
     let Some(blob) = get_blob() else {
         return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![]));
@@ -658,46 +724,6 @@ fn toggle_block(state: &mut MemeDeckState, r_path: &str) -> anyhow::Result<()> {
     })
 }
 
-fn proxy(to: &str, method: http::Method, body: Vec<u8>, mut req_headers: HashMap<String, String>, mut headers: HashMap<String, String>) -> anyhow::Result<()> {
-    println!("proxying {to}");
-    req_headers.insert("host".to_string(), "api.memedeck.xyz".to_string());
-    println!("{req_headers:?}");
-    match send_request_await_response(
-        method, 
-        url::Url::parse(to).unwrap(),
-        Some(req_headers),
-        10000,
-        body
-    ) {
-        Ok(resp) => {
-            let body = resp.body();
-            println!("status: {:?}, headers: {:?}", resp.status(), resp.headers());
-            match resp.status() {
-                StatusCode::OK => {
-                    headers.remove("Content-Type");
-                    headers.insert(
-                        "Content-Type".to_string(),
-                        match resp.headers().get("Content-Type") {
-                            None => "text/html".to_string(),
-                            Some(v) => v.to_str().unwrap().to_string(),
-                        }
-                    );
-                    Ok(send_response(
-                        StatusCode::OK,
-                        Some(headers),
-                        body.clone(),
-                    ))
-                },
-                StatusCode::UNAUTHORIZED => Ok(send_response(StatusCode::UNAUTHORIZED, None, vec![])),
-                StatusCode::INTERNAL_SERVER_ERROR =>
-                    Ok(send_response(StatusCode::INTERNAL_SERVER_ERROR, Some(plain_hm(resp.headers().clone())), vec![])),
-                _ => Ok(send_response(StatusCode::NOT_FOUND, None, vec![]))
-            }
-        }
-        Err(e) => Err(anyhow::anyhow!("error: {}", e)),
-    }
-}
-
 /*
 fn curl(
     m: http::Method,
@@ -715,32 +741,6 @@ fn curl(
     }
 }
 */
-
-fn stringify_params(p: &HashMap<String,String>) -> String {
-    let mut r = String::new();
-    for k in p.keys() {
-        r.push_str(k);
-        r.push_str("=");
-        r.push_str(&default_percent_enc(p.get(k).unwrap()));
-        r.push_str("&");
-    }
-    r
-}
-
-fn plain_hm(m: HeaderMap<HeaderValue>) -> HashMap<String, String> {
-    let mut result = HashMap::new();
-    for key in m.keys() {
-        let mut newval = String::new();
-        let mut i = 0;
-        for val in m.get_all(key).iter() {
-            if i > 0 { newval.push_str("; "); }
-            newval.push_str(val.to_str().unwrap());
-            i += 1;
-        }
-        result.insert(key.as_str().into(), newval);
-    }
-    result
-}
 
 fn replace_reserved_dynamic_next_page(our: &Address, r_path: &str, headers: &mut HashMap<String, String>, file: &str, prop_name: &str, id: &str) {
     headers.remove("Content-Type");
@@ -777,6 +777,3 @@ fn url_pre(our: &Address) -> String {
     format!("/{}:{}", our.process(), our.package_id())
 }
 
-fn default_percent_enc(string: &str) -> String {
-    utf8_percent_encode(string, FRAGMENT).to_string()
-}

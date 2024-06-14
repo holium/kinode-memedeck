@@ -78,6 +78,7 @@ fn init(our: Address) {
     let _ = bind_http_path("/u/:uid/drafts", true, false);
     let _ = bind_http_path("/u/:uid/decks", true, false);
     let _ = bind_http_path("/u/:uid", true, false);
+    let _ = bind_http_path("/character/:id", true, false);
     let _ = bind_http_path("/_next/image", true, false);
 
     let mut state = MemeDeckState::load(&our);
@@ -160,6 +161,11 @@ fn handle_http_server_request(
                             headers.insert("Location".into(), params.get("url").unwrap().clone());
                             Ok(send_response(StatusCode::TEMPORARY_REDIRECT, Some(headers), vec![]))
                         }
+                        "/character/:id" => Ok(replace_reserved_dynamic_next_page(
+                            our, r_path, &mut headers,
+                            "character/reserved", "id",
+                            request.url_params().get("id").unwrap()
+                        )),
                         "/u/:uid/decks" => Ok(replace_reserved_dynamic_next_page(
                             our, r_path, &mut headers,
                             "u/reserved/decks", "handle",

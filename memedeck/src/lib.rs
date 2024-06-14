@@ -382,8 +382,18 @@ fn handle_admin_request(
             Ok(())
         }
 
+        //m our@memedeck:memedeck:meme-deck.os '"StopCharacterMonitorBot"'
         AdminTerminalRequest::StopCharacterMonitorBot => {
-            // TODO: kill the spawned_process
+            // TODO: kill the tg process
+            let our_worker_address = Address {
+                node: our.node.clone(),
+                process: "worker:memedeck:meme-deck.os".parse().unwrap(),
+            };
+
+            let _resp = Request::new()
+                .body(serde_json::to_vec(&WorkerRequest::Kill)?)
+                .target(&our_worker_address)
+                .send_and_await_response(5)??;
             Ok(())
         }
     }
@@ -497,7 +507,7 @@ fn composed_upload(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Resul
     api_headers.insert("content-type".to_string(), "application/json".to_string());
     api_headers.insert("cookie".to_string(), state.api_cookie.clone().unwrap_or("".into()));
 
-    let payload_body_str = String::from_utf8_lossy(&payload_body).to_string();
+    let _payload_body_str = String::from_utf8_lossy(&payload_body).to_string();
     //println!("sending to api: {payload_body_str}");
 
     match send_request_await_response(
@@ -511,7 +521,7 @@ fn composed_upload(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Resul
             let mut response_headers = HashMap::new();
             response_headers.insert("content-type".to_string(), "application/json".to_string());
             // 4. Proxy/return the response of the API to the client
-            let resp_string = String::from_utf8_lossy(resp.body()).to_string();
+            let _resp_string = String::from_utf8_lossy(resp.body()).to_string();
             //println!("resp_string {resp_string}");
             Ok(send_response(resp.status(), Some(response_headers), resp.body().clone()))
         }
@@ -551,7 +561,7 @@ fn faceswap_upload(state: &mut MemeDeckState, meme_id: &String, panel_id: &Strin
     api_headers.insert("content-type".to_string(), "application/json".to_string());
     api_headers.insert("cookie".to_string(), state.api_cookie.clone().unwrap_or("".into()));
 
-    let payload_body_str = String::from_utf8_lossy(&payload_body).to_string();
+    //let payload_body_str = String::from_utf8_lossy(&payload_body).to_string();
     //println!("sending to api: {payload_body_str}");
 
     match send_request_await_response(
@@ -565,7 +575,7 @@ fn faceswap_upload(state: &mut MemeDeckState, meme_id: &String, panel_id: &Strin
             let mut response_headers = HashMap::new();
             response_headers.insert("content-type".to_string(), "application/json".to_string());
             // 4. Proxy/return the response of the API to the client
-            let resp_string = String::from_utf8_lossy(resp.body()).to_string();
+            //let resp_string = String::from_utf8_lossy(resp.body()).to_string();
             //println!("resp_string {resp_string}");
             Ok(send_response(resp.status(), Some(response_headers), resp.body().clone()))
         }

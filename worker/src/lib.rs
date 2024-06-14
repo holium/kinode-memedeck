@@ -14,6 +14,7 @@ struct WorkerState {
     tg_address: Address,
     cookie: String,
     posted_memes: Vec<String>,
+    should_kill: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,6 +45,7 @@ fn init(our: Address) {
         tg_address: our.clone(),
         cookie: "".into(),
         posted_memes: vec![],
+        should_kill: false,
     };
 
     loop {
@@ -53,11 +55,15 @@ fn init(our: Address) {
                 println!("worker: error: {:?}", e);
             }
         };
+        if state.should_kill {
+            println!("{our} worker terminating");
+            break;
+        }
     }
 }
 
 fn handle_message(
-    _our: &Address,
+    our: &Address,
     state: &mut WorkerState,
 ) -> anyhow::Result<()> {
     let message = await_message()?;
@@ -89,13 +95,17 @@ fn handle_message(
                     set_timer(30_000, None); // 30 seconds from now
 
                     Response::new().body(b"ack").send()
+                },
+
+                WorkerRequest::Kill => {
+                    state.should_kill = true;
+                    println!("{our} worker recieved kill request");
+                    Response::new().body(b"ack").send()
                 }
             }
         }
 
         Message::Response {
-            ref source,
-            ref body,
             ..
         } => {
             req_api(state)?;
@@ -113,6 +123,7 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
 
     let api_url = format!("{MEMEDECK_API}/v1/search?limit=2&start=0&interval=today&character_id={}&sort_by=recent", state.character);
 
+    println!("pinging {MEMEDECK_API} for {}", state.character);
     match send_request_await_response(
         Method::GET,
         url::Url::parse(&api_url).unwrap(),
@@ -129,7 +140,8 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
                 if !state.posted_memes.contains(&newest_meme.id) {
                     println!("new meme found for {}, posting to telegram", state.character);
                     state.posted_memes.push(newest_meme.id.clone());
-                    let msg = format!("user @{} created meme {}", newest_meme.creator_name, newest_meme.url);
+                    let meme_url = str::replace(&newest_meme.url, "memedeckblob.blob.core.windows.net", "media.memedeck.xyz");
+                    let msg = format!("user {} created meme {}", newest_meme.creator_name, meme_url);
                     send_bot_message(&msg, state.chat_id, &state.tg_address)?;
                 }
             }

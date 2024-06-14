@@ -31,6 +31,13 @@ struct MemeSearchItem {
     creator_name: String,
     creator_handle: String,
     url: String,
+    prompts: Option<MemePromptSet>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MemePromptSet {
+    #[serde(rename="0")]
+    first: String
 }
 
 wit_bindgen::generate!({
@@ -124,7 +131,7 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
     let mut headers = HashMap::new();
     headers.insert("Content-Type".to_string(), "application/json".to_string());
 
-    let api_url = format!("{MEMEDECK_API}/v1/search?limit=2&start=0&interval=today&character_id={}&sort_by=recent", state.character);
+    let api_url = format!("{MEMEDECK_API}/v1/search?limit=2&start=0&interval=today&character_id={}&sort_by=recent&include_prompts=true", state.character);
 
     println!("pinging {MEMEDECK_API} for {}", state.character);
     match send_request_await_response(
@@ -145,8 +152,11 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
                     state.posted_memes.push(newest_meme.id.clone());
                     let char_name = state.character.replace("_", " ").to_title_case();
                     let meme_url = str::replace(&newest_meme.url, "memedeckblob.blob.core.windows.net", "media.memedeck.xyz");
+                    let prompt = newest_meme.prompts.unwrap_or(MemePromptSet {
+                        first: "prompt retrieval not implemented yet".into()
+                    }).first;
                     let msg = format!(
-                        "New <b>{}</b> created by <a href='https://memedeck.xyz/u/{}'>{}</a>!\n\nPrompt: <i>prompt retrieval not implemented yet</i>\n\n<a href='https://memedeck.xyz/home?memeId={}'>Upvote on MemeDeck</a>",
+                        "New <b>{}</b> created by <a href='https://memedeck.xyz/u/{}'>{}</a>!\n\nPrompt: <i>{prompt}</i>\n\n<a href='https://memedeck.xyz/home?memeId={}'>Upvote on MemeDeck</a>",
                         char_name,
                         newest_meme.creator_handle,
                         newest_meme.creator_name,

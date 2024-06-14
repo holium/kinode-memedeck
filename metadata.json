@@ -4,7 +4,7 @@
     "image": "https://media.memedeck.xyz/memes/memedeck-app-logo.png",
     "properties": {
         "package_name": "memedeck",
-        "current_version": "0.2.3",
+        "current_version": "0.2.4",
         "publisher": "meme-deck.os",
         "mirrors": [
             "meme-deck.os"

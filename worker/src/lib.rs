@@ -6,7 +6,9 @@ use kinode_process_lib::{
     timer::set_timer,
 };
 use serde::{Serialize, Deserialize};
-use shared::{MEMEDECK_API, WorkerRequest, send_bot_message};
+use shared::{MEMEDECK_API, WorkerRequest, send_bot_photo};
+extern crate inflector;
+use inflector::Inflector;
 
 struct WorkerState {
     chat_id: i64,
@@ -27,6 +29,7 @@ struct MemeSearchItem {
     id: String,
     interval_bucket: String,
     creator_name: String,
+    creator_handle: String,
     url: String,
 }
 
@@ -140,9 +143,16 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
                 if !state.posted_memes.contains(&newest_meme.id) {
                     println!("new meme found for {}, posting to telegram", state.character);
                     state.posted_memes.push(newest_meme.id.clone());
+                    let char_name = state.character.replace("_", " ").to_title_case();
                     let meme_url = str::replace(&newest_meme.url, "memedeckblob.blob.core.windows.net", "media.memedeck.xyz");
-                    let msg = format!("user {} created meme {}", newest_meme.creator_name, meme_url);
-                    send_bot_message(&msg, state.chat_id, &state.tg_address)?;
+                    let msg = format!(
+                        "New <b>{}</b> created by <a href='https://memedeck.xyz/u/{}'>{}</a>!\n\nPrompt: <i>prompt retrieval not implemented yet</i>\n\n<a href='https://memedeck.xyz/home?memeId={}'>Upvote on MemeDeck</a>",
+                        char_name,
+                        newest_meme.creator_handle,
+                        newest_meme.creator_name,
+                        newest_meme.id,
+                    );
+                    send_bot_photo(&meme_url, &msg, state.chat_id, &state.tg_address)?;
                 }
             }
             Ok(())

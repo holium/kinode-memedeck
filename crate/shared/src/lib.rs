@@ -10,7 +10,7 @@ use kinode_process_lib::{
     },
 };
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
-use frankenstein::{ChatId, Message as TgMessage, SendMessageParams, SendPhotoParams};
+use frankenstein::{ChatId, Message as TgMessage, SendMessageParams, SendPhotoParams, ParseMode};
 use telegram_interface::*;
 
 pub const TG_ADDRESS: (&str, &str, &str, &str) = ("our", "tg", "memedeck", "meme-deck.os");
@@ -129,22 +129,21 @@ pub fn send_bot_message(text: &str, id: i64, addr: &Address) -> anyhow::Result<T
     Ok(message)
 }
 
-/*
 pub fn send_bot_photo(pic: &str, caption: &str, chat_id: i64, addr: &Address) -> anyhow::Result<TgMessage> {
     let params = SendPhotoParams::builder()
         .chat_id(ChatId::Integer(chat_id))
         .caption(caption)
         .photo(pic.to_string())
+        .parse_mode(ParseMode::Html)
         .build();
     let send_request = serde_json::to_vec(&TgRequest::SendPhoto(params))?;
     let response = Request::to(addr)
         .body(send_request)
         .send_and_await_response(30)??;
     let TgResponse::SendPhoto(message) = serde_json::from_slice(response.body())? else {
-        println!("failed to send message");
+        println!("failed to send photo");
         return Err(anyhow::anyhow!("Failed to send message"));
     };
     Ok(message)
 }
 
-*/

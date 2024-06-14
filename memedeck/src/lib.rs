@@ -404,6 +404,7 @@ fn handle_admin_request(
         }
     }
 }
+
 fn create_meme(state: &mut MemeDeckState) -> anyhow::Result<()> {
     let Some(blob) = get_blob() else {
         return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![]));

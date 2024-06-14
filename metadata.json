@@ -16,7 +16,9 @@
             "0.2.1": "4059dbd6480909d399ac812eb4a14237dbccf6f2318b1eff8268c88bf160f648",
             "0.2.2": "3785aa25daf881caea12f578e559b867bfe73ea331b819ad5453bf42d74f5cc6",
             "0.2.3": "75fe48bd2242fda9d4f8bdd267c782b0206796b4cc709cc636cf7f6dce6bf0b3"
-        }
+        },
+        "wit_version": 0,
+        "dependencies": []
     },
     "website": "https://github.com/holium/kinode-memedeck",
     "external_url": "",

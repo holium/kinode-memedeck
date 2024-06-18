@@ -4,7 +4,7 @@
     "image": "https://media.memedeck.xyz/memes/memedeck-app-logo.png",
     "properties": {
         "package_name": "memedeck",
-        "current_version": "0.2.6",
+        "current_version": "0.2.7",
         "publisher": "meme-deck.os",
         "mirrors": [
             "meme-deck.os"
@@ -18,7 +18,8 @@
             "0.2.3": "75fe48bd2242fda9d4f8bdd267c782b0206796b4cc709cc636cf7f6dce6bf0b3",
             "0.2.4": "4c57fad504ea386ad42a6d04fb11ec66214db823a17a6261c191b0e81063c3f2",
             "0.2.5": "965580e492905ec0914b43c38e61e7ab8314dda27795ccaf85404786601508a1",
-            "0.2.6": "eccedf0c1c5ef6108f980dbc0df3df30f6b7773d1b91c82f2c0880ddec237557"
+            "0.2.6": "eccedf0c1c5ef6108f980dbc0df3df30f6b7773d1b91c82f2c0880ddec237557",
+            "0.2.7": "0694c690798227059675d6de0f8554d7ff575c6d54d5e31572b6670c35e0d51f"
         },
         "wit_version": 0,
         "dependencies": []

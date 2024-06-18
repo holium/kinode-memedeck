@@ -142,7 +142,7 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
         format!("{MEMEDECK_API}/v1/search?limit=2&start=0&interval=today&character_id={}&sort_by=recent&include_prompts=true", state.character)
     };
 
-    println!("pinging {MEMEDECK_API} for {}", state.character);
+    //println!("pinging {api_url} for {}", state.character);
     match send_request_await_response(
         Method::GET,
         url::Url::parse(&api_url).unwrap(),
@@ -152,6 +152,7 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
     ) {
         Ok(resp) => {
             let body = resp.body();
+            //println!("{}", String::from_utf8_lossy(body));
             let meme_search_response: MemeSearchResponse = serde_json::from_slice(body)?;
             //println!("{meme_search_response:?}");
             if meme_search_response.memes.len() > 0 {
@@ -164,13 +165,22 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
                     let prompt = newest_meme.prompts.unwrap_or(MemePromptSet {
                         first: "prompt retrieval not implemented yet".into()
                     }).first;
-                    let msg = format!(
-                        "New <b>{}</b> created by <a href='https://memedeck.xyz/u/{}'>{}</a>!\n\nPrompt: <i>{prompt}</i>\n\n<a href='https://memedeck.xyz/home?memeId={}'>Upvote on MemeDeck</a>",
-                        char_name,
-                        newest_meme.creator_handle,
-                        newest_meme.creator_name,
-                        newest_meme.id,
-                    );
+                    let msg = if state.character == "normal" {
+                            format!(
+                            "New meme created by <a href='https://memedeck.xyz/u/{}'>{}</a>!\n\nPrompt: <i>{prompt}</i>\n\n<a href='https://memedeck.xyz/home?memeId={}'>Upvote on MemeDeck</a>",
+                            newest_meme.creator_handle,
+                            newest_meme.creator_name,
+                            newest_meme.id,
+                        )
+                    } else {
+                            format!(
+                            "New <b>{}</b> created by <a href='https://memedeck.xyz/u/{}'>{}</a>!\n\nPrompt: <i>{prompt}</i>\n\n<a href='https://memedeck.xyz/home?memeId={}'>Upvote on MemeDeck</a>",
+                            char_name,
+                            newest_meme.creator_handle,
+                            newest_meme.creator_name,
+                            newest_meme.id,
+                        )
+                    };
                     send_bot_photo(&meme_url, &msg, state.chat_id, &state.tg_address)?;
                 }
             }

@@ -57,12 +57,13 @@ fn init(our: Address) {
         .send()
         .unwrap();
 
-    let private_paths = vec!["/", "/_next/static/*", "/home", "/library", "/library/saved", "/library/uploads", "/search"];
+    let private_paths = vec!["/", "/_next/static/*", "/home", "/library", "/library/saved", "/library/uploads", "/search", "/telegram-bot"];
     let public_paths = vec!["/images", "/favicon.ico"];
     let _ = serve_ui(&our, "ui", true, false, private_paths);
     let _ = serve_ui(&our, "ui", false, false, public_paths);
     //let _ = serve_ui(&our, "ui", false, false, public_paths);
     //let _ = bind_http_path("/", true, false);
+    let _ = bind_http_path("/set_tg_bot/:token/:character", true, false);
     let _ = bind_http_path("/set_public_address", true, false);
     let _ = bind_http_path("/v1/auth/twitter/login", true, false);
     let _ = bind_http_path("/twitter_callback", false, false);
@@ -108,6 +109,8 @@ fn handle_request(
         handle_http_server_request(our, &message.body(), state)
     } else if message.source().node == our.node && proc.package_name == "terminal" && proc.publisher_node == "sys" {
         handle_admin_request(our, &message.body(), state)
+    } else if state.tg_process_address.is_some() && state.tg_process_address.clone().unwrap() == message.source().clone() {
+        handle_tg_request(our, &message.body(), state)
     } else if message.source().node != our.node {
         /*
          * TODO: actually implement node-to-node communications
@@ -263,6 +266,13 @@ fn handle_http_server_request(
                             println!("{:?}", request);
                             toggle_block(state, r_path)
                         }
+                        _ if { r_path.starts_with("/set_tg_bot/") } => {
+                            let token = request.url_params().get("token").unwrap();
+                            let character = request.url_params().get("character").unwrap();
+                            state.tg_character_id = Some(character.clone());
+                            start_tg(our, state, &token)?;
+                            start_bot_if_ready(our, state)
+                        }
                         _ => Ok(send_response(StatusCode::NOT_FOUND, None, vec![]))
                     }
                 }
@@ -316,6 +326,102 @@ fn handle_http_server_request(
     }
 }
 
+fn handle_tg_request(
+    our: &Address,
+    body: &[u8],
+    state: &mut MemeDeckState,
+) -> anyhow::Result<()> {
+    if let Some(token) = state.telegram_token.clone() {
+        let bot_id: u64 = token.split(":").next().unwrap().parse().unwrap();
+        match tg::get_most_recently_joined_chat(bot_id, body) {
+            Some(id) => {
+                state.tg_chat_id = Some(id);
+                println!("state.tg_chat_id: {:?}", state.tg_chat_id);
+                state.save();
+                start_bot_if_ready(our, state)?;
+            }
+            None => ()
+        }
+    }
+    Ok(())
+}
+
+fn start_tg(our: &Address, state: &mut MemeDeckState, token: &str) -> anyhow::Result<()> {
+    let tg_bot_wasm_path = format!("{}/pkg/tg.wasm", our.package_id());
+    // give spawned process both our caps, and grant http_client messaging.
+    let http_client = ProcessId::from_str("http_client:distro:sys").unwrap();
+    let process_id = spawn(
+        None,
+        &tg_bot_wasm_path,
+        OnExit::None,
+        our_capabilities(),
+        vec![http_client, "http_server:distro:sys".parse().unwrap()],
+        false,
+    )?;
+    let worker_address = Address {
+        node: our.node.clone(),
+        process: process_id.clone(),
+    };
+    state.tg_process_address = Some(worker_address.clone());
+
+    tg::init_tg(token, &worker_address)?;
+    tg::subscribe(&worker_address)?;
+    state.telegram_token = Some(token.into());
+    state.save();
+    Ok(())
+}
+
+fn start_bot_if_ready(our: &Address, state: &mut MemeDeckState) -> anyhow::Result<()> {
+    if state.telegram_token.is_none() {
+        println!("telegram_token not set, bot not starting");
+        return Ok(());
+    }
+    if state.tg_process_address.is_none() {
+        println!("tg_process_address not set, bot not starting");
+        return Ok(());
+    }
+    let Some(chat_id) = state.tg_chat_id else {
+        println!("chat_id not set, bot not starting");
+        return Ok(());
+    };
+    let Some(character) = state.tg_character_id.clone() else {
+        println!("character not set, bot not starting");
+        return Ok(());
+    };
+    // this function actually spawns the child process
+    let spawned_process_id: ProcessId = match spawn(
+        // name of the child process
+        Some("worker"),
+        // path to find the compiled Wasm file for the child process
+        &format!("{}/pkg/worker.wasm", our.package_id()),
+        OnExit::None,
+        our_capabilities(),
+        vec!["http_client:distro:sys".parse().unwrap(), "timer:distro:sys".parse().unwrap(), state.tg_process_address.clone().unwrap().process],
+        false,
+    ) {
+        Ok(spawned_process_id) => spawned_process_id,
+        Err(e) => {
+            panic!("couldn't spawn {e:?}");
+        }
+    };
+
+    let our_worker_address = Address {
+        node: our.node.clone(),
+        process: spawned_process_id,
+    };
+
+    let _resp = Request::new()
+        .body(serde_json::to_vec(&WorkerRequest::Initialize {
+            chat_id,
+            character,
+            tg_address: state.tg_process_address.clone().unwrap_or(our.clone()),
+            cookie: state.api_cookie.clone().unwrap_or("".into())
+        })?)
+        .target(&our_worker_address)
+        .send_and_await_response(5)??;
+    Ok(())
+}
+
 fn handle_admin_request(
     our: &Address,
     body: &[u8],
@@ -327,65 +433,17 @@ fn handle_admin_request(
     })?;
 
     match admin_request {
+        //m our@memedeck:memedeck:meme-deck.os '{"SetToken":"7270979454:AAEjH7mfC-ZVOimVDsAhWJw87g1PxQriMfc"}'
         AdminTerminalRequest::SetToken(s) => {
-            let tg_bot_wasm_path = format!("{}/pkg/tg.wasm", our.package_id());
-            // give spawned process both our caps, and grant http_client messaging.
-            let http_client = ProcessId::from_str("http_client:distro:sys").unwrap();
-            let process_id = spawn(
-                None,
-                &tg_bot_wasm_path,
-                OnExit::None,
-                our_capabilities(),
-                vec![http_client, "http_server:distro:sys".parse().unwrap()],
-                false,
-            )?;
-            let worker_address = Address {
-                node: our.node.clone(),
-                process: process_id.clone(),
-            };
-            state.tg_process_address = Some(worker_address.clone());
-
-            tg::init_tg(&s, &worker_address)?;
-            state.telegram_token = Some(s);
-            state.save();
-            Ok(())
+            start_tg(our, state, &s)
         },
 
-        //m our@memedeck:memedeck:meme-deck.os '{"SetToken":"7270979454:AAEjH7mfC-ZVOimVDsAhWJw87g1PxQriMfc"}'
         //m our@memedeck:memedeck:meme-deck.os '{"StartCharacterMonitorBot":{"chat_id":-4278984459,"character":"apu_apustaja"}}'
         AdminTerminalRequest::StartCharacterMonitorBot { chat_id, character, } => {
-            // this function actually spawns the child process
-            let spawned_process_id: ProcessId = match spawn(
-                // name of the child process
-                Some("worker"),
-                // path to find the compiled Wasm file for the child process
-                &format!("{}/pkg/worker.wasm", our.package_id()),
-                OnExit::None,
-                our_capabilities(),
-                vec!["http_client:distro:sys".parse().unwrap(), "timer:distro:sys".parse().unwrap(), state.tg_process_address.clone().unwrap().process],
-                false,
-            ) {
-                Ok(spawned_process_id) => spawned_process_id,
-                Err(e) => {
-                    panic!("couldn't spawn {e:?}");
-                }
-            };
-
-            let our_worker_address = Address {
-                node: our.node.clone(),
-                process: spawned_process_id,
-            };
-
-            let _resp = Request::new()
-                .body(serde_json::to_vec(&WorkerRequest::Initialize {
-                    chat_id,
-                    character,
-                    tg_address: state.tg_process_address.clone().unwrap_or(our.clone()),
-                    cookie: state.api_cookie.clone().unwrap_or("".into())
-                })?)
-                .target(&our_worker_address)
-                .send_and_await_response(5)??;
-            Ok(())
+            state.tg_character_id = Some(character);
+            state.tg_chat_id = Some(chat_id);
+            state.save();
+            start_bot_if_ready(our, state)
         }
 
         //m our@memedeck:memedeck:meme-deck.os '"StopCharacterMonitorBot"'

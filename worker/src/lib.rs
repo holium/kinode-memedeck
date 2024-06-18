@@ -10,6 +10,8 @@ use shared::{MEMEDECK_API, WorkerRequest, send_bot_photo};
 extern crate inflector;
 use inflector::Inflector;
 
+const QUERY_INTERVAL: u64 = 60_000;
+
 struct WorkerState {
     chat_id: i64,
     character: String,
@@ -101,8 +103,8 @@ fn handle_message(
                     // 2. if any "new" ones are found, send to tg bot for it to post to the
                     //    chat_id
                     // 3. wait to poll again
-                    req_api(state)?;
-                    set_timer(30_000, None); // 30 seconds from now
+                    let _ = req_api(state);
+                    set_timer(QUERY_INTERVAL, None);
 
                     Response::new().body(b"ack").send()
                 },
@@ -118,8 +120,11 @@ fn handle_message(
         Message::Response {
             ..
         } => {
-            req_api(state)?;
-            set_timer(30_000, None); // 30 seconds from now
+            let r = req_api(state);
+            if let Err(e) = r {
+                println!("req_api error: {e}");
+            }
+            set_timer(QUERY_INTERVAL, None);
             Ok(())
         }
     }
@@ -131,7 +136,11 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
     let mut headers = HashMap::new();
     headers.insert("Content-Type".to_string(), "application/json".to_string());
 
-    let api_url = format!("{MEMEDECK_API}/v1/search?limit=2&start=0&interval=today&character_id={}&sort_by=recent&include_prompts=true", state.character);
+    let api_url = if state.character == "normal" {
+        format!("{MEMEDECK_API}/v1/search?limit=2&start=0&interval=today&sort_by=recent&include_prompts=true")
+    } else {
+        format!("{MEMEDECK_API}/v1/search?limit=2&start=0&interval=today&character_id={}&sort_by=recent&include_prompts=true", state.character)
+    };
 
     println!("pinging {MEMEDECK_API} for {}", state.character);
     match send_request_await_response(

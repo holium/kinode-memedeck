@@ -1,5 +1,5 @@
-use frankenstein::{ChatId, Message as TgMessage, SendMessageParams, UpdateContent};
-use kinode_process_lib::{println, get_blob, Message, Request, Address};
+use frankenstein::UpdateContent;
+use kinode_process_lib::{println, Request, Address};
 use telegram_interface::*;
 //use shared::TG_ADDRESS;
 
@@ -21,18 +21,34 @@ pub fn init_tg(key: &str, addr: &Address) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn get_last_tg_msg(message: &Message) -> Option<TgMessage> {
-    let Ok(TgResponse::Update(tg_update)) = serde_json::from_slice(message.body()) else {
+pub fn get_most_recently_joined_chat(bot_id: u64, body: &[u8]) -> Option<i64> {
+    let Ok(TgResponse::Update(tg_update)) = serde_json::from_slice(body) else {
         return None;
     };
-    let update = tg_update.updates.last()?;
-    let msg = match &update.content {
-        UpdateContent::Message(msg) | UpdateContent::ChannelPost(msg) => msg,
-        _ => {
-            return None;
+    for update in tg_update.updates.iter().rev() {
+        let chat_id: Option<i64> = match update.content.clone() {
+            UpdateContent::Message(c) => {
+                let mut cid: Option<i64> = None;
+                match c.new_chat_members {
+                    Some(mems) => {
+                        for member in mems {
+                            if member.id == bot_id {
+                                cid = Some(c.chat.id);
+                                break;
+                            }
+                        }
+                    }
+                    None => ()
+                };
+                cid
+            }
+            _ => None,
+        };
+        if chat_id.is_some() {
+            return chat_id;
         }
-    };
-    Some(msg.clone())
+    }
+    None
 }
 
 pub fn subscribe(addr: &Address) -> anyhow::Result<()> {

@@ -108,6 +108,8 @@ pub struct SavableMemeDeckState {
     pub api_cookie: Option<String>,
     pub telegram_token: Option<String>,
     pub tg_process_address: Option<Address>,
+    pub tg_chat_id: Option<i64>,
+    pub tg_character_id: Option<String>,
 }
 impl SavableMemeDeckState {
     pub fn save(&self) {
@@ -126,6 +128,8 @@ pub struct MemeDeckState {
     pub api_cookie: Option<String>,
     pub telegram_token: Option<String>,
     pub tg_process_address: Option<Address>,
+    pub tg_chat_id: Option<i64>,
+    pub tg_character_id: Option<String>,
     pub db: sqlite::Sqlite,
 }
 impl MemeDeckState {
@@ -141,6 +145,8 @@ impl MemeDeckState {
             api_cookie: self.api_cookie.clone(),
             telegram_token: self.telegram_token.clone(),
             tg_process_address: self.tg_process_address.clone(),
+            tg_chat_id: self.tg_chat_id.clone(),
+            tg_character_id: self.tg_character_id.clone(),
         }.save()
     }
 
@@ -157,6 +163,8 @@ impl MemeDeckState {
                 api_cookie: s.api_cookie,
                 telegram_token: s.telegram_token,
                 tg_process_address: s.tg_process_address,
+                tg_chat_id: s.tg_chat_id,
+                tg_character_id: s.tg_character_id,
                 db: sqlite::open(our.package_id(), "memedeck", None).expect("cant access sqlite db"),
             },
             None => MemeDeckState {
@@ -170,6 +178,8 @@ impl MemeDeckState {
                 api_cookie: None,
                 telegram_token: None,
                 tg_process_address: None,
+                tg_chat_id: None,
+                tg_character_id: None,
                 db: sqlite::open(our.package_id(), "memedeck", None).expect("cant access sqlite db"),
             },
         }

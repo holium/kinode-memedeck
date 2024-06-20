@@ -39,7 +39,9 @@ struct MemeSearchItem {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct MemePromptSet {
     #[serde(rename="0")]
-    first: String
+    first: Option<String>,
+    #[serde(rename="1")]
+    second: Option<String>
 }
 
 wit_bindgen::generate!({
@@ -156,37 +158,62 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
             let meme_search_response: MemeSearchResponse = serde_json::from_slice(body)?;
             //println!("{meme_search_response:?}");
             if meme_search_response.memes.len() > 0 {
+                let send_meme = meme_search_response.memes[0].clone();
                 let newest_meme = meme_search_response.memes[0].clone();
                 if !state.posted_memes.contains(&newest_meme.id) {
                     println!("new meme found for {}, posting to telegram", state.character);
                     state.posted_memes.push(newest_meme.id.clone());
                     let char_name = state.character.replace("_", " ").to_title_case();
                     let meme_url = str::replace(&newest_meme.url, "memedeckblob.blob.core.windows.net", "media.memedeck.xyz");
-                    let prompt = newest_meme.prompts.unwrap_or(MemePromptSet {
-                        first: "prompt retrieval not implemented yet".into()
-                    }).first;
-                    let msg = if state.character == "normal" {
-                            format!(
-                            "New meme created by <a href='https://memedeck.xyz/u/{}'>{}</a>!\n\nPrompt: <i>{prompt}</i>\n\n<a href='https://memedeck.xyz/home?memeId={}'>Upvote on MemeDeck</a>",
-                            newest_meme.creator_handle,
-                            newest_meme.creator_name,
-                            newest_meme.id,
-                        )
-                    } else {
-                            format!(
-                            "New <b>{}</b> created by <a href='https://memedeck.xyz/u/{}'>{}</a>!\n\nPrompt: <i>{prompt}</i>\n\n<a href='https://memedeck.xyz/home?memeId={}'>Upvote on MemeDeck</a>",
-                            char_name,
-                            newest_meme.creator_handle,
-                            newest_meme.creator_name,
-                            newest_meme.id,
-                        )
-                    };
-                    send_bot_photo(&meme_url, &msg, state.chat_id, &state.tg_address)?;
+                    if let Some(prompts) = newest_meme.prompts {
+                        if let Some(prompt) = prompts.first {
+                            format_and_send(
+                                &prompt,
+                                &send_meme,
+                                &meme_url,
+                                &char_name,
+                                state
+                            )?;
+                        } else if let Some(prompt) = prompts.second {
+                            format_and_send(
+                                &prompt,
+                                &send_meme,
+                                &meme_url,
+                                &char_name,
+                                state
+                            )?;
+                        } else {
+                            println!("got a new meme, but prompt is not known. see {api_url} for details");
+                        }
+                    }
                 }
             }
             Ok(())
         }
         Err(e) => Err(anyhow::anyhow!("memedeck api didn't respond properly {e:?}")),
+    }
+}
+
+fn format_and_send(prompt: &str, newest_meme: &MemeSearchItem, meme_url: &str, char_name: &str, state: &WorkerState) -> anyhow::Result<()> {
+    let msg = if state.character == "normal" {
+            format!(
+            "New meme created by <a href='https://memedeck.xyz/u/{}'>{}</a>!\n\nPrompt: <i>{prompt}</i>\n\n<a href='https://memedeck.xyz/home?memeId={}'>Upvote on MemeDeck</a>",
+            newest_meme.creator_handle,
+            newest_meme.creator_name,
+            newest_meme.id,
+        )
+    } else {
+            format!(
+            "New <b>{}</b> created by <a href='https://memedeck.xyz/u/{}'>{}</a>!\n\nPrompt: <i>{prompt}</i>\n\n<a href='https://memedeck.xyz/home?memeId={}'>Upvote on MemeDeck</a>",
+            char_name,
+            newest_meme.creator_handle,
+            newest_meme.creator_name,
+            newest_meme.id,
+        )
+    };
+    match send_bot_photo(&meme_url, &msg, state.chat_id, &state.tg_address) {
+        Ok(_) => Ok(()),
+        Err(e) => Err(e),
     }
 }
 

@@ -197,14 +197,14 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
 fn format_and_send(prompt: &str, newest_meme: &MemeSearchItem, meme_url: &str, char_name: &str, state: &WorkerState) -> anyhow::Result<()> {
     let msg = if state.character == "normal" {
             format!(
-            "New meme created by <a href='https://memedeck.xyz/u/{}'>{}</a>!\n\nPrompt: <i>{prompt}</i>\n\n<a href='https://memedeck.xyz/home?memeId={}'>Upvote on MemeDeck</a>",
+            "New meme created by <a href='https://memedeck.xyz/u/{}'>{}</a>!\n\nPrompt: <i>{prompt}</i>\n\n<a href='https://memedeck.xyz/home/{}'>👉Upvote on MemeDeck</a>",
             newest_meme.creator_handle,
             newest_meme.creator_name,
             newest_meme.id,
         )
     } else {
             format!(
-            "New <b>{}</b> created by <a href='https://memedeck.xyz/u/{}'>{}</a>!\n\nPrompt: <i>{prompt}</i>\n\n<a href='https://memedeck.xyz/home?memeId={}'>Upvote on MemeDeck</a>",
+            "New <b>{}</b> created by <a href='https://memedeck.xyz/u/{}'>{}</a>!\n\nPrompt: <i>{prompt}</i>\n\n<a href='https://memedeck.xyz/home/{}'>👉Upvote on MemeDeck</a>",
             char_name,
             newest_meme.creator_handle,
             newest_meme.creator_name,

@@ -2,6 +2,11 @@
 
 essentially all you have to do is just build the ui statically in the `memedeck-monorepo/ui`, and then copy that output to `pkg/ui` here.
 
+this works for me locally:
+```
+rm -rf pkg/ui/* && cp -r ~/code/memedeck-monorepo/ui/out/* pkg/ui/
+```
+
 easier said than done.
 
 ```bash

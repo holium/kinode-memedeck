@@ -57,7 +57,7 @@ fn init(our: Address) {
         .send()
         .unwrap();
 
-    let private_paths = vec!["/", "/_next/static/*", "/home", "/library", "/library/saved", "/library/uploads", "/search", "/telegram-bot"];
+    let private_paths = vec!["/", "/_next/static/*", "trending", "/home", "/library", "/library/saved", "/library/uploads", "/search", "/telegram-bot"];
     let public_paths = vec!["/images", "/favicon.ico"];
     let _ = serve_ui(&our, "ui", true, false, private_paths);
     let _ = serve_ui(&our, "ui", false, false, public_paths);
@@ -73,13 +73,16 @@ fn init(our: Address) {
     let _ = bind_http_path("/v1/memes/:meme_id/panel/:panel_id", true, false);
     let _ = bind_http_path("/v1/memes/:meme_id/panel/:panel_id/faceswap-upload", true, false);
     let _ = bind_http_path("/v1/*", true, false);
+    let _ = bind_http_path("/v2/*", true, false);
     let _ = bind_http_path("/deck/edit/:deck_id", true, false);
     let _ = bind_http_path("/deck/:deck_id", true, false);
+    let _ = bind_http_path("/home/:meme_id", true, false);
     let _ = bind_http_path("/u/:uid/bookmarks", true, false);
     let _ = bind_http_path("/u/:uid/drafts", true, false);
     let _ = bind_http_path("/u/:uid/decks", true, false);
     let _ = bind_http_path("/u/:uid", true, false);
-    let _ = bind_http_path("/character/:id", true, false);
+    let _ = bind_http_path("/deck/:id", true, false);
+    let _ = bind_http_path("/deck/:id/edit", true, false);
     let _ = bind_http_path("/_next/image", true, false);
 
     let mut state = MemeDeckState::load(&our);
@@ -164,10 +167,20 @@ fn handle_http_server_request(
                             headers.insert("Location".into(), params.get("url").unwrap().clone());
                             Ok(send_response(StatusCode::TEMPORARY_REDIRECT, Some(headers), vec![]))
                         }
-                        "/character/:id" => Ok(replace_reserved_dynamic_next_page(
+                        "/deck/:id" => Ok(replace_reserved_dynamic_next_page(
                             our, r_path, &mut headers,
-                            "character/reserved", "id",
+                            "deck/reserved", "id",
                             request.url_params().get("id").unwrap()
+                        )),
+                        "/deck/:id/edit" => Ok(replace_reserved_dynamic_next_page(
+                            our, r_path, &mut headers,
+                            "deck/reserved/edit", "id",
+                            request.url_params().get("id").unwrap()
+                        )),
+                        "/home/:meme_id" => Ok(replace_reserved_dynamic_next_page(
+                            our, r_path, &mut headers,
+                            "home/reserved", "memeId",
+                            request.url_params().get("meme_id").unwrap()
                         )),
                         "/u/:uid/decks" => Ok(replace_reserved_dynamic_next_page(
                             our, r_path, &mut headers,
@@ -199,7 +212,7 @@ fn handle_http_server_request(
                             "deck/reserved", "deckId",
                             request.url_params().get("deck_id").unwrap()
                         )),
-                        _ if { r_path.starts_with("/v1/") } => proxy(
+                        _ if { r_path.starts_with("/v1/") || r_path.starts_with("/v2/") } => proxy(
                             &format!("{MEMEDECK_API}{r_path}?{}", stringify_params(request.query_params())),
                             http::Method::GET, vec![],
                             req_h,
@@ -246,7 +259,7 @@ fn handle_http_server_request(
                             let panel_id_str = panel_id.to_string();
                             return faceswap_upload(state, &meme_id_str, &panel_id_str);
                         }
-                        _ if { r_path.starts_with("/v1/") } => {
+                        _ if { r_path.starts_with("/v1/") || r_path.starts_with("/v2/") } => {
                             let blob = match get_blob() {
                                 Some(blob) => blob.bytes,
                                 None => vec![],
@@ -279,7 +292,7 @@ fn handle_http_server_request(
                 "PUT" => {
                     //println!("PUT {r_path}");
                     match b_path {
-                        _ if { r_path.starts_with("/v1/") } => {
+                        _ if { r_path.starts_with("/v1/") || r_path.starts_with("/v2/") } => {
                             let blob = match get_blob() {
                                 Some(blob) => blob.bytes,
                                 None => vec![],
@@ -298,7 +311,7 @@ fn handle_http_server_request(
                     //println!("DELETE {r_path}");
                     match b_path {
                         "/v1/memes/:meme_id" => delete_meme(state, request.url_params().get("meme_id").unwrap()),
-                        _ if { r_path.starts_with("/v1/") } => {
+                        _ if { r_path.starts_with("/v1/") || r_path.starts_with("/v2/") } => {
                             let blob = match get_blob() {
                                 Some(blob) => blob.bytes,
                                 None => vec![],

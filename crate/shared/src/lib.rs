@@ -14,7 +14,8 @@ use frankenstein::{ChatId, Message as TgMessage, SendMessageParams, SendPhotoPar
 use telegram_interface::*;
 
 pub const TG_ADDRESS: (&str, &str, &str, &str) = ("our", "tg", "memedeck", "meme-deck.os");
-pub const MEMEDECK_API: &str = "https://api.memedeck.xyz";
+pub const MEMEDECK_API_PARTIAL: &str = "staging-api.memedeck.xyz";
+pub const MEMEDECK_API: &str = "https://staging-api.memedeck.xyz";
 // const MEMEDECK_API: &str = "https://staging-api.memedeck.xyz";
 // const MEMEDECK_API: &str = "http://localhost:8080";
 /// https://url.spec.whatwg.org/#fragment-percent-encode-set
@@ -44,8 +45,8 @@ pub enum WorkerRequest {
 }
 
 pub fn proxy(to: &str, method: Method, body: Vec<u8>, mut req_headers: HashMap<String, String>, mut headers: HashMap<String, String>) -> anyhow::Result<()> {
-    //println!("proxying {to}");
-    req_headers.insert("host".to_string(), "api.memedeck.xyz".to_string());
+    println!("proxying {to}");
+    req_headers.insert("host".to_string(), MEMEDECK_API_PARTIAL.to_string());
     //println!("{req_headers:?}");
     match send_request_await_response(
         method, 

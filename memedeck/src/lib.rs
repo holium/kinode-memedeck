@@ -57,7 +57,7 @@ fn init(our: Address) {
         .send()
         .unwrap();
 
-    let private_paths = vec!["/", "/_next/static/*", "trending", "/home", "/library", "/library/saved", "/library/uploads", "/search", "/telegram-bot"];
+    let private_paths = vec!["/", "/_next/static/*", "/trending", "/home", "/library", "/library/saved", "/library/uploads", "/search", "/telegram-bot"];
     let public_paths = vec!["/images", "/favicon.ico"];
     let _ = serve_ui(&our, "ui", true, false, private_paths);
     let _ = serve_ui(&our, "ui", false, false, public_paths);
@@ -77,6 +77,7 @@ fn init(our: Address) {
     let _ = bind_http_path("/deck/edit/:deck_id", true, false);
     let _ = bind_http_path("/deck/:deck_id", true, false);
     let _ = bind_http_path("/home/:meme_id", true, false);
+    let _ = bind_http_path("/trending/:meme_id", true, false);
     let _ = bind_http_path("/u/:uid/bookmarks", true, false);
     let _ = bind_http_path("/u/:uid/drafts", true, false);
     let _ = bind_http_path("/u/:uid/decks", true, false);
@@ -180,6 +181,11 @@ fn handle_http_server_request(
                         "/home/:meme_id" => Ok(replace_reserved_dynamic_next_page(
                             our, r_path, &mut headers,
                             "home/reserved", "memeId",
+                            request.url_params().get("meme_id").unwrap()
+                        )),
+                        "/trending/:meme_id" => Ok(replace_reserved_dynamic_next_page(
+                            our, r_path, &mut headers,
+                            "trending/reserved", "memeId",
                             request.url_params().get("meme_id").unwrap()
                         )),
                         "/u/:uid/decks" => Ok(replace_reserved_dynamic_next_page(

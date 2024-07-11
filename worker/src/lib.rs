@@ -168,7 +168,7 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
         character_query
     );
 
-    println!("pinging {api_url} for {}", state.character);
+    //println!("pinging {api_url} for {}", state.character);
     match send_request_await_response(
         Method::GET,
         url::Url::parse(&api_url).unwrap(),
@@ -180,7 +180,7 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
             let body = resp.body();
             //println!("{}", String::from_utf8_lossy(body));
             let meme_search_response: MemeSearchResponse = serde_json::from_slice(body)?;
-            println!("got memedeck api response with {} memes", meme_search_response.memes.len());
+            //println!("got memedeck api response with {} memes", meme_search_response.memes.len());
             if meme_search_response.memes.len() > 0 {
                 for meme in meme_search_response.memes {
                     let send_meme = meme.clone();
@@ -192,7 +192,7 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
                             meme.votes_total.is_some()
                             && meme.votes_total.unwrap() >= state.vote_minimum;
                         if !meme_has_enough_votes {
-                            println!("meme {} didn't have enough votes", meme.id);
+                            //println!("meme {} didn't have enough votes", meme.id);
                             continue;
                         }
                     }

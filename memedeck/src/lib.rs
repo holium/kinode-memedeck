@@ -63,7 +63,7 @@ fn init(our: Address) {
     let _ = serve_ui(&our, "ui", false, false, public_paths);
     //let _ = serve_ui(&our, "ui", false, false, public_paths);
     //let _ = bind_http_path("/", true, false);
-    let _ = bind_http_path("/set_tg_bot/:token/:character", true, false);
+    let _ = bind_http_path("/set_tg_bot/:token/:character/:posts_per_hour", true, false);
     let _ = bind_http_path("/set_public_address", true, false);
     let _ = bind_http_path("/v1/auth/twitter/login", true, false);
     let _ = bind_http_path("/twitter_callback", false, false);
@@ -96,7 +96,7 @@ fn init(our: Address) {
             }
             Ok(message) => match handle_request(&our, &mut state, &message) {
                 Ok(()) => continue,
-                Err(e) => println!("{}: error handling request: {:?}", our, e),
+                Err(e) => println!("error handling request: {:?}", e),
             },
         }
     }
@@ -110,10 +110,13 @@ fn handle_request(
     let proc = message.source().process.clone();
     if message.source().node == our.node && proc == "http_server:distro:sys"
     {
+        //println!("handle_http_server_request");
         handle_http_server_request(our, &message.body(), state)
     } else if message.source().node == our.node && proc.package_name == "terminal" && proc.publisher_node == "sys" {
+        //println!("handle_admin_request");
         handle_admin_request(our, &message.body(), state)
     } else if state.tg_process_address.is_some() && state.tg_process_address.clone().unwrap() == message.source().clone() {
+        //println!("handle_tg_request");
         handle_tg_request(our, &message.body(), state)
     } else if message.source().node != our.node {
         /*
@@ -288,7 +291,9 @@ fn handle_http_server_request(
                         _ if { r_path.starts_with("/set_tg_bot/") } => {
                             let token = request.url_params().get("token").unwrap();
                             let character = request.url_params().get("character").unwrap();
+                            let posts_per_hour: u64 = request.url_params().get("posts_per_hour").unwrap().parse().unwrap_or(60);
                             state.tg_character_id = Some(character.clone());
+                            state.tg_posts_per_hour = posts_per_hour;
                             start_tg(our, state, &token)?;
                             start_bot_if_ready(our, state)
                         }
@@ -357,7 +362,10 @@ fn handle_tg_request(
                 state.tg_chat_id = Some(id);
                 println!("state.tg_chat_id: {:?}", state.tg_chat_id);
                 state.save();
-                start_bot_if_ready(our, state)?;
+                if let Err(e) = start_bot_if_ready(our, state) {
+                    println!("start_bot_if_ready error: {e:?}");
+                    return Err(e);
+                }
             }
             None => ()
         }
@@ -415,7 +423,12 @@ fn start_bot_if_ready(our: &Address, state: &mut MemeDeckState) -> anyhow::Resul
         &format!("{}/pkg/worker.wasm", our.package_id()),
         OnExit::None,
         our_capabilities(),
-        vec!["http_client:distro:sys".parse().unwrap(), "timer:distro:sys".parse().unwrap(), state.tg_process_address.clone().unwrap().process],
+        vec![
+            "http_client:distro:sys".parse().unwrap(),
+            "terminal:terminal:sys".parse().unwrap(),
+            "timer:distro:sys".parse().unwrap(),
+            state.tg_process_address.clone().unwrap().process,
+        ],
         false,
     ) {
         Ok(spawned_process_id) => spawned_process_id,
@@ -434,6 +447,7 @@ fn start_bot_if_ready(our: &Address, state: &mut MemeDeckState) -> anyhow::Resul
             chat_id,
             character,
             tg_address: state.tg_process_address.clone().unwrap_or(our.clone()),
+            query_interval: 60 * 60_000 / state.tg_posts_per_hour,
             cookie: state.api_cookie.clone().unwrap_or("".into())
         })?)
         .target(&our_worker_address)

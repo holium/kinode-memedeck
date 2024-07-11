@@ -6,11 +6,9 @@ use kinode_process_lib::{
     timer::set_timer,
 };
 use serde::{Serialize, Deserialize};
-use shared::{MEMEDECK_API, WorkerRequest, send_bot_photo};
+use shared::{MEMEDECK_API, WorkerRequest, send_bot_message};
 extern crate inflector;
 use inflector::Inflector;
-
-const QUERY_INTERVAL: u64 = 60_000;
 
 struct WorkerState {
     chat_id: i64,
@@ -19,6 +17,8 @@ struct WorkerState {
     cookie: String,
     posted_memes: Vec<String>,
     should_kill: bool,
+    query_interval: u64,
+    vote_minimum: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,10 +29,10 @@ struct MemeSearchResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct MemeSearchItem {
     id: String,
-    interval_bucket: String,
     creator_name: String,
     creator_handle: String,
     url: String,
+    votes_total: Option<u64>,
     prompts: Option<MemePromptSet>,
 }
 
@@ -60,6 +60,8 @@ fn init(our: Address) {
         cookie: "".into(),
         posted_memes: vec![],
         should_kill: false,
+        query_interval: 60,
+        vote_minimum: 0,
     };
 
     loop {
@@ -90,23 +92,40 @@ fn handle_message(
             let request = serde_json::from_slice::<WorkerRequest>(body)?;
 
             match request {
+                //m our@worker:memedeck:meme-deck.os '{"ChangeMinimum":1}'
+                WorkerRequest::ChangeMinimum(min) => {
+                    println!("{our} worker changing vote_minimum to {min}");
+                    state.vote_minimum = min;
+                    Response::new().body(b"ack").send()
+                },
+
+                // interval = ms until next query of MEMEDECK_API
+                //m our@worker:memedeck:meme-deck.os '{"ChangeInterval":60000}'
+                WorkerRequest::ChangeInterval(interval) => {
+                    println!("{our} worker changing query interval to {interval}");
+                    state.query_interval = interval;
+                    Response::new().body(b"ack").send()
+                },
+
                 WorkerRequest::Initialize {
                     chat_id,
                     character,
                     tg_address,
                     cookie,
+                    query_interval,
                 } => {
                     state.character = character;
                     state.chat_id = chat_id;
                     state.tg_address = tg_address;
                     state.cookie = cookie;
+                    state.query_interval = query_interval;
 
                     // 1. send request to MEMEDECK_API for new generations matching the character
                     // 2. if any "new" ones are found, send to tg bot for it to post to the
                     //    chat_id
                     // 3. wait to poll again
                     let _ = req_api(state);
-                    set_timer(QUERY_INTERVAL, None);
+                    set_timer(state.query_interval, None);
 
                     Response::new().body(b"ack").send()
                 },
@@ -126,7 +145,7 @@ fn handle_message(
             if let Err(e) = r {
                 println!("req_api error: {e}");
             }
-            set_timer(QUERY_INTERVAL, None);
+            set_timer(state.query_interval, None);
             Ok(())
         }
     }
@@ -138,13 +157,18 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
     let mut headers = HashMap::new();
     headers.insert("Content-Type".to_string(), "application/json".to_string());
 
-    let api_url = if state.character == "normal" {
-        format!("{MEMEDECK_API}/v1/search?limit=2&start=0&interval=today&sort_by=recent&include_prompts=true")
+    let character_query = if state.character == "normal" {
+        "".into()
     } else {
-        format!("{MEMEDECK_API}/v1/search?limit=2&start=0&interval=today&character_id={}&sort_by=recent&include_prompts=true", state.character)
+        format!("&character_id={}", state.character)
     };
+    let api_url = format!(
+        "{}/v1/search?limit=10&start=0&interval=today&sort_by=recent&include_prompts=true{}",
+        MEMEDECK_API,
+        character_query
+    );
 
-    //println!("pinging {api_url} for {}", state.character);
+    println!("pinging {api_url} for {}", state.character);
     match send_request_await_response(
         Method::GET,
         url::Url::parse(&api_url).unwrap(),
@@ -156,36 +180,48 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
             let body = resp.body();
             //println!("{}", String::from_utf8_lossy(body));
             let meme_search_response: MemeSearchResponse = serde_json::from_slice(body)?;
-            //println!("{meme_search_response:?}");
+            println!("got memedeck api response with {} memes", meme_search_response.memes.len());
             if meme_search_response.memes.len() > 0 {
-                let send_meme = meme_search_response.memes[0].clone();
-                let newest_meme = meme_search_response.memes[0].clone();
-                if !state.posted_memes.contains(&newest_meme.id) {
+                for meme in meme_search_response.memes {
+                    let send_meme = meme.clone();
+                    if state.posted_memes.contains(&meme.id) {
+                        continue;
+                    }
+                    if state.vote_minimum > 0 {
+                        let meme_has_enough_votes: bool =
+                            meme.votes_total.is_some()
+                            && meme.votes_total.unwrap() >= state.vote_minimum;
+                        if !meme_has_enough_votes {
+                            println!("meme {} didn't have enough votes", meme.id);
+                            continue;
+                        }
+                    }
+                    // if we get here, we found our new meme to post
                     println!("new meme found for {}, posting to telegram", state.character);
-                    state.posted_memes.push(newest_meme.id.clone());
                     let char_name = state.character.replace("_", " ").to_title_case();
-                    let meme_url = str::replace(&newest_meme.url, "memedeckblob.blob.core.windows.net", "media.memedeck.xyz");
-                    if let Some(prompts) = newest_meme.prompts {
-                        if let Some(prompt) = prompts.first {
-                            format_and_send(
-                                &prompt,
-                                &send_meme,
-                                &meme_url,
-                                &char_name,
-                                state
-                            )?;
-                        } else if let Some(prompt) = prompts.second {
-                            format_and_send(
-                                &prompt,
-                                &send_meme,
-                                &meme_url,
-                                &char_name,
-                                state
-                            )?;
+
+                    let mut prompt = String::new();
+                    if let Some(prompts) = meme.prompts {
+                        if let Some(p) = prompts.first {
+                            prompt = p;
+                        } else if let Some(p) = prompts.second {
+                            prompt = p;
                         } else {
                             println!("got a new meme, but prompt is not known. see {api_url} for details");
                         }
+                    } else {
+                        println!("\"prompts\" object not present in memedeck api response");
                     }
+
+                    format_and_send(
+                        &prompt,
+                        &send_meme,
+                        &char_name,
+                        state
+                    )?;
+
+                    state.posted_memes.push(meme.id.clone());
+                    break;
                 }
             }
             Ok(())
@@ -194,26 +230,27 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
     }
 }
 
-fn format_and_send(prompt: &str, newest_meme: &MemeSearchItem, meme_url: &str, char_name: &str, state: &WorkerState) -> anyhow::Result<()> {
-    let msg = if state.character == "normal" {
-            format!(
-            "New meme created by <a href='https://memedeck.xyz/u/{}'>{}</a>!\n\nPrompt: <i>{prompt}</i>\n\n<a href='https://memedeck.xyz/home/{}'>👉Upvote on MemeDeck</a>",
-            newest_meme.creator_handle,
-            newest_meme.creator_name,
-            newest_meme.id,
-        )
-    } else {
-            format!(
-            "New <b>{}</b> created by <a href='https://memedeck.xyz/u/{}'>{}</a>!\n\nPrompt: <i>{prompt}</i>\n\n<a href='https://memedeck.xyz/home/{}'>👉Upvote on MemeDeck</a>",
-            char_name,
-            newest_meme.creator_handle,
-            newest_meme.creator_name,
-            newest_meme.id,
-        )
+fn format_and_send(prompt: &str, newest_meme: &MemeSearchItem, char_name: &str, state: &WorkerState) -> anyhow::Result<()> {
+    let prompt_str = if prompt == "" { "".into() } else {
+        format!("\n\nPrompt: <i>{prompt}</i>")
     };
-    match send_bot_photo(&meme_url, &msg, state.chat_id, &state.tg_address) {
+    let new_char_str = if state.character == "normal" {
+        "New meme".into()
+    } else {
+        format!("New <b>{char_name}</b>")
+    };
+    let msg = format!(
+        "<a href='https://memedeck.xyz/home/{}'>{new_char_str}</a> created by <a href='https://memedeck.xyz/u/{}'>{}</a>!{prompt_str}",
+        newest_meme.id,
+        newest_meme.creator_handle,
+        newest_meme.creator_name,
+    );
+    match send_bot_message(&msg, state.chat_id, &state.tg_address) {
         Ok(_) => Ok(()),
-        Err(e) => Err(e),
+        Err(e) => {
+            println!("send_bot_message error: {e}");
+            Err(e)
+        }
     }
 }
 

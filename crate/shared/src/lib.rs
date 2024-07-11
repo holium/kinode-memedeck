@@ -39,8 +39,11 @@ pub enum WorkerRequest {
         chat_id: i64,
         character: String,
         tg_address: Address,
+        query_interval: u64,
         cookie: String,
     },
+    ChangeInterval(u64),
+    ChangeMinimum(u64),
     Kill
 }
 
@@ -118,6 +121,7 @@ pub fn send_bot_message(text: &str, id: i64, addr: &Address) -> anyhow::Result<T
     let params = SendMessageParams::builder()
         .chat_id(ChatId::Integer(id))
         .text(text)
+        .parse_mode(ParseMode::Html)
         .build();
     let send_message_request = serde_json::to_vec(&TgRequest::SendMessage(params))?;
     let response = Request::to(addr)
@@ -131,16 +135,36 @@ pub fn send_bot_message(text: &str, id: i64, addr: &Address) -> anyhow::Result<T
 }
 
 pub fn send_bot_photo(pic: &str, caption: &str, chat_id: i64, addr: &Address) -> anyhow::Result<TgMessage> {
+    println!("send_bot_photo() started");
     let params = SendPhotoParams::builder()
         .chat_id(ChatId::Integer(chat_id))
         .caption(caption)
         .photo(pic.to_string())
         .parse_mode(ParseMode::Html)
         .build();
-    let send_request = serde_json::to_vec(&TgRequest::SendPhoto(params))?;
+    println!("params built");
+    let send_photo_result = serde_json::to_vec(&TgRequest::SendPhoto(params));
+    let Ok(send_request) = send_photo_result else {
+        let err_msg = format!("{}", send_photo_result.unwrap_err());
+        println!("TgRequest::SendPhoto to json error: {err_msg}");
+        return Err(anyhow::anyhow!("{err_msg}"));
+    };
+    println!("json parsed to the send_photo TgRequest");
+    println!("requesting to {addr} with {send_request:?}");
     let response = Request::to(addr)
         .body(send_request)
-        .send_and_await_response(30)??;
+        .send_and_await_response(30);
+    println!("request call complete");
+    let Ok(response) = response else {
+        let err_msg = format!("{}", response.unwrap_err());
+        println!("Request to {addr} send_and_await_response1 error: {err_msg}");
+        return Err(anyhow::anyhow!("{err_msg}"));
+    };
+    let Ok(response) = response else {
+        let err_msg = format!("{}", response.unwrap_err());
+        println!("Request to {addr} send_and_await_response2 error: {err_msg}");
+        return Err(anyhow::anyhow!("{err_msg}"));
+    };
     let TgResponse::SendPhoto(message) = serde_json::from_slice(response.body())? else {
         println!("failed to send photo");
         return Err(anyhow::anyhow!("Failed to send message"));

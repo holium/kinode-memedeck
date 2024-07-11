@@ -110,6 +110,7 @@ pub struct SavableMemeDeckState {
     pub tg_process_address: Option<Address>,
     pub tg_chat_id: Option<i64>,
     pub tg_character_id: Option<String>,
+    pub tg_posts_per_hour: u64,
 }
 impl SavableMemeDeckState {
     pub fn save(&self) {
@@ -130,6 +131,7 @@ pub struct MemeDeckState {
     pub tg_process_address: Option<Address>,
     pub tg_chat_id: Option<i64>,
     pub tg_character_id: Option<String>,
+    pub tg_posts_per_hour: u64,
     pub db: sqlite::Sqlite,
 }
 impl MemeDeckState {
@@ -147,6 +149,7 @@ impl MemeDeckState {
             tg_process_address: self.tg_process_address.clone(),
             tg_chat_id: self.tg_chat_id.clone(),
             tg_character_id: self.tg_character_id.clone(),
+            tg_posts_per_hour: self.tg_posts_per_hour,
         }.save()
     }
 
@@ -165,6 +168,7 @@ impl MemeDeckState {
                 tg_process_address: s.tg_process_address,
                 tg_chat_id: s.tg_chat_id,
                 tg_character_id: s.tg_character_id,
+                tg_posts_per_hour: s.tg_posts_per_hour,
                 db: sqlite::open(our.package_id(), "memedeck", None).expect("cant access sqlite db"),
             },
             None => MemeDeckState {
@@ -180,6 +184,7 @@ impl MemeDeckState {
                 tg_process_address: None,
                 tg_chat_id: None,
                 tg_character_id: None,
+                tg_posts_per_hour: 60,
                 db: sqlite::open(our.package_id(), "memedeck", None).expect("cant access sqlite db"),
             },
         }

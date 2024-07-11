@@ -34,7 +34,7 @@ if new pages were created, you may need to add those paths to the init function 
     let _ = bind_http_path("/u/:uid/decks", true, false);
 ```
 
-and you will also want to ensure this line is using production api url in `memedeck/src/lib.rs`
+and you will also want to ensure this line is using production api url in `crate/shared/src/lib.rs`
  
 ```
 const MEMEDECK_API: &str = "https://api.memedeck.xyz";

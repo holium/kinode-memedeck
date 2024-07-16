@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use kinode_process_lib::{
-    await_message, call_init, println,
+    await_message, call_init, println, get_typed_state, set_state,
     Address, Message, Response,
     http::{Method, send_request_await_response},
     timer::set_timer,
@@ -10,6 +10,7 @@ use shared::{MEMEDECK_API, WorkerRequest, send_bot_message};
 extern crate inflector;
 use inflector::Inflector;
 
+#[derive(Debug, Serialize, Deserialize)]
 struct WorkerState {
     chat_id: i64,
     character: String,
@@ -20,6 +21,28 @@ struct WorkerState {
     query_interval: u64,
     vote_minimum: u64,
 }
+impl WorkerState {
+    pub fn save(&self) {
+        set_state(&bincode::serialize(self).unwrap());
+    }
+
+    pub fn load(our: &Address) -> WorkerState {
+        match get_typed_state(|bytes| Ok(bincode::deserialize::<WorkerState>(bytes)?)) {
+            Some(s) => s,
+            None => WorkerState {
+                chat_id: 0,
+                character: "".into(),
+                tg_address: our.clone(),
+                cookie: "".into(),
+                posted_memes: vec![],
+                should_kill: false,
+                query_interval: 60,
+                vote_minimum: 0,
+            },
+        }
+    }
+}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct MemeSearchResponse {
@@ -53,16 +76,8 @@ call_init!(init);
 fn init(our: Address) {
     println!("{our} worker: begin");
 
-    let mut state = WorkerState {
-        chat_id: 0,
-        character: "".into(),
-        tg_address: our.clone(),
-        cookie: "".into(),
-        posted_memes: vec![],
-        should_kill: false,
-        query_interval: 60,
-        vote_minimum: 0,
-    };
+    let mut state = WorkerState::load(&our);
+    println!("{our} worker state: {state:?}");
 
     loop {
         match handle_message(&our, &mut state) {
@@ -96,6 +111,7 @@ fn handle_message(
                 WorkerRequest::ChangeMinimum(min) => {
                     println!("{our} worker changing vote_minimum to {min}");
                     state.vote_minimum = min;
+                    state.save();
                     Response::new().body(b"ack").send()
                 },
 
@@ -104,6 +120,7 @@ fn handle_message(
                 WorkerRequest::ChangeInterval(interval) => {
                     println!("{our} worker changing query interval to {interval}");
                     state.query_interval = interval;
+                    state.save();
                     Response::new().body(b"ack").send()
                 },
 
@@ -119,6 +136,7 @@ fn handle_message(
                     state.tg_address = tg_address;
                     state.cookie = cookie;
                     state.query_interval = query_interval;
+                    state.save();
 
                     // 1. send request to MEMEDECK_API for new generations matching the character
                     // 2. if any "new" ones are found, send to tg bot for it to post to the
@@ -132,6 +150,7 @@ fn handle_message(
 
                 WorkerRequest::Kill => {
                     state.should_kill = true;
+                    state.save();
                     println!("{our} worker recieved kill request");
                     Response::new().body(b"ack").send()
                 }
@@ -197,8 +216,8 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
                         }
                     }
                     // if we get here, we found our new meme to post
-                    println!("new meme found for {}, posting to telegram", state.character);
                     let char_name = state.character.replace("_", " ").to_title_case();
+                    println!("new meme {} found for {char_name}, posting to telegram", meme.id);
 
                     let mut prompt = String::new();
                     if let Some(prompts) = meme.prompts {
@@ -207,7 +226,7 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
                         } else if let Some(p) = prompts.second {
                             prompt = p;
                         } else {
-                            println!("got a new meme, but prompt is not known. see {api_url} for details");
+                            println!("meme {} has no prompt listed in {api_url}", meme.id);
                         }
                     } else {
                         println!("\"prompts\" object not present in memedeck api response");
@@ -221,6 +240,7 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
                     )?;
 
                     state.posted_memes.push(meme.id.clone());
+                    state.save();
                     break;
                 }
             }

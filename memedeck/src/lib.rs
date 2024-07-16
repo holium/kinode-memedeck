@@ -88,6 +88,18 @@ fn init(our: Address) {
 
     let mut state = MemeDeckState::load(&our);
 
+    // start sub-processes if we know the needed info for them
+    if let Some(token) = state.telegram_token.clone() {
+        match start_tg(&our, &mut state, &token) {
+            Ok(_) => (),
+            Err(e) => println!("start_tg failed: {e}"),
+        };
+        match start_bot_if_ready(&our, &mut state) {
+            Ok(_) => (),
+            Err(e) => println!("start_bot_if_ready failed: {e}"),
+        }
+    }
+
     loop {
         match await_message() {
             Err(send_error) => {
@@ -242,7 +254,7 @@ fn handle_http_server_request(
                             };
                             let upload_data = serde_json::from_slice::<PublicAddress>(&blob.bytes)?;
                             state.public_address = upload_data.url.clone();
-                            println!("setting addr: {}", upload_data.url);
+                            //println!("setting addr: {}", upload_data.url);
                             state.save();
 
                             Ok(send_response(
@@ -281,11 +293,11 @@ fn handle_http_server_request(
                             )
                         },
                         _ if { r_path.starts_with("/toggle_follow/") } => {
-                            println!("{:?}", request);
+                            //println!("{:?}", request);
                             toggle_follow(state, r_path)
                         }
                         _ if { r_path.starts_with("/toggle_block/") } => {
-                            println!("{:?}", request);
+                            //println!("{:?}", request);
                             toggle_block(state, r_path)
                         }
                         _ if { r_path.starts_with("/set_tg_bot/") } => {

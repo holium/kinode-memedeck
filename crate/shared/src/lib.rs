@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use kinode_process_lib::{
-    //get_blob, Message,
     Request, Address,
     http::{
         Method, StatusCode,
@@ -16,9 +15,9 @@ use telegram_interface::*;
 pub const TG_ADDRESS: (&str, &str, &str, &str) = ("our", "tg", "memedeck", "meme-deck.os");
 pub const MEMEDECK_API_PARTIAL: &str = "api.memedeck.xyz";
 pub const MEMEDECK_API: &str = "https://api.memedeck.xyz";
-pub const GENERATION_MEMEDECK_API: &str = "http://localhost:8079";
+//pub const GENERATION_MEMEDECK_API: &str = "http://localhost:8079";
 //pub const GENERATION_MEMEDECK_API: &str = "https://staging-generation-api.memedeck.xyz";
-//pub const GENERATION_MEMEDECK_API: &str = "https://studio.api.memedeck.xyz";
+pub const GENERATION_MEMEDECK_API: &str = "https://studio.api.memedeck.xyz";
 // const MEMEDECK_API: &str = "https://staging-api.memedeck.xyz";
 // const MEMEDECK_API: &str = "http://localhost:8080";
 /// https://url.spec.whatwg.org/#fragment-percent-encode-set

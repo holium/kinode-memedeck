@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 use kinode_process_lib::{
     await_message, call_init, println, Address, ProcessId,
@@ -13,7 +14,15 @@ use kinode_process_lib::{
     },
     vfs::open_file,
     our_capabilities,
+    timer::set_timer,
 };
+use storage_interface::Request as StorageRequest;
+use storage_interface::Response as StorageResponse;
+use storage_interface::TweetData;
+use llm_interface::openai::LLMRequest;
+use llm_interface::openai::LLMResponse;
+use llm_interface::openai::MessageBuilder;
+use llm_interface::openai::ChatRequestBuilder;
 mod tg;
 mod types;
 use types::{
@@ -26,9 +35,14 @@ use types::{
     AdminTerminalRequest,
 };
 use std::str::FromStr;
-use shared::{MEMEDECK_API, WorkerRequest, proxy, plain_hm, stringify_params};
+use shared::{
+    GENERATION_MEMEDECK_API, MEMEDECK_API,
+    WorkerRequest, proxy, plain_hm, stringify_params
+};
 
 const ICON: &str = include_str!("icon");
+const LLM_ADDRESS: (&str, &str, &str, &str) =
+    ("our", "openai", "command_center", "appattacc.os");
 
 wit_bindgen::generate!({
     path: "target/wit",
@@ -86,7 +100,7 @@ fn init(our: Address) {
     let _ = bind_http_path("/deck/:id/edit", true, false);
     let _ = bind_http_path("/_next/image", true, false);
 
-    let mut state = MemeDeckState::load(&our);
+    let mut state = MemeDeckState::load();
 
     // start sub-processes if we know the needed info for them
     if let Some(token) = state.telegram_token.clone() {
@@ -130,6 +144,9 @@ fn handle_request(
     } else if state.tg_process_address.is_some() && state.tg_process_address.clone().unwrap() == message.source().clone() {
         //println!("handle_tg_request");
         handle_tg_request(our, &message.body(), state)
+    } else if !message.is_request() {
+        //it's a response which currently we only accept from timer
+        send_recent_tweets_batch_to_api(state)
     } else if message.source().node != our.node {
         /*
          * TODO: actually implement node-to-node communications
@@ -478,6 +495,21 @@ fn handle_admin_request(
     })?;
 
     match admin_request {
+        //m our@memedeck:memedeck:meme-deck.os '"StartLLMBatchTimer"'
+        AdminTerminalRequest::StartLLMBatchTimer => {
+            if state.timer_is_set {
+                return Err(anyhow::anyhow!("timer is alreay set, no need to run this again"));
+            }
+            println!("starting the llm batch timer, will run 1x per day. (running right away)");
+            set_timer(1000 * 60 * 60 * 24, None);
+            state.timer_is_set = true;
+            state.save();
+            send_recent_tweets_batch_to_api(state)
+        },
+        //m our@memedeck:memedeck:meme-deck.os '"CreatePromptBatchFromTweets"'
+        AdminTerminalRequest::CreatePromptBatchFromTweets => {
+            send_recent_tweets_batch_to_api(state)
+        },
         //m our@memedeck:memedeck:meme-deck.os '{"SetToken":"7270979454:AAEjH7mfC-ZVOimVDsAhWJw87g1PxQriMfc"}'
         AdminTerminalRequest::SetToken(s) => {
             start_tg(our, state, &s)
@@ -506,6 +538,94 @@ fn handle_admin_request(
             Ok(())
         }
     }
+}
+
+fn send_recent_tweets_batch_to_api(state: &MemeDeckState) -> anyhow::Result<()> {
+    // Get the unix time between now and 24 hours ago.
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let yesterday = now - 86400 as i64; // Subtract 86400 seconds (1 day) from the current time
+
+    // Send the request to storage to get the tweets from the last 24 hours.
+    let request = serde_json::to_vec(&StorageRequest::GetTweets {
+        start_time: yesterday,
+        end_time: now,
+    })?;
+    let storage_address: (&str, &str, &str, &str) =
+        ("our", "storage", "command_center", "appattacc.os");
+    let Ok(Ok(response)) = Request::to(storage_address)
+        .body(request)
+        .send_and_await_response(30)
+    else {
+        return Err(anyhow::anyhow!("command center didn't response to our request properly"));
+    };
+
+    // Parse the response from storage.
+    let body = response.body();
+    let response: StorageResponse = serde_json::from_slice(&body)?;
+    let StorageResponse::GetTweets { tweets } = response;
+
+    // Extract the top 25 tweets by views
+    let mut tweets_vec: Vec<(&String, &TweetData)> = tweets.iter().collect();
+    tweets_vec.sort_by(|a, b| b.1.views.unwrap_or(0).cmp(&a.1.views.unwrap_or(0)));
+    let top_25_tweets = tweets_vec.into_iter().take(25).collect::<Vec<_>>();
+    if top_25_tweets.len() == 0 {
+        return Err(anyhow::anyhow!("no tweets to send to batch"));
+    }
+    // Delineate the tweets with <start_tweet> and </end_tweet>
+    let mut delineated_tweet_contents = String::new();
+    for (_, tweet_data) in top_25_tweets {
+        delineated_tweet_contents.push_str("\n<start_tweet>");
+        delineated_tweet_contents.push_str(&tweet_data.content);
+        delineated_tweet_contents.push_str("</end_tweet>");
+    }
+
+    // Make the prompt for the llm
+    let prompt = format!("Given this list of the top 25 most popular tweets in my feed today, write me the 3-6 most common topics. Describe them in detail, as a 4chan user would, in order to create a descriptive and visually interesting image prompt for a diffusion model. Be silly and irreverent.
+Respond in a JSON list of strings only! Do not respond with a prelude or anything else but valid json. ONLY RESPOND IN VALID JSON!
+Don't be vague about the topics, talk about the exact specific topic. It's better to be more specific than vague.
+\n\n{}", delineated_tweet_contents);
+
+    // Send the prompt to llama3-70b
+    let request = ChatRequestBuilder::default()
+        .model("llama3-70b-8192".to_string())
+        .messages(vec![MessageBuilder::default()
+            .role("user".to_string())
+            .content(prompt)
+            .build()?])
+        .build()?;
+    let request = serde_json::to_vec(&LLMRequest::GroqChat(request))?;
+    let response = Request::to(LLM_ADDRESS)
+        .body(request)
+        .send_and_await_response(30)??;
+    let LLMResponse::Chat(chat) = serde_json::from_slice(response.body())? else {
+        println!("chatbot: failed to parse LLM response");
+        return Err(anyhow::anyhow!("Failed to parse LLM response"));
+    };
+    println!("sending to llm:\n{}", chat.choices[0].message.content.clone());
+    let prompts: Vec<String> = serde_json::from_str(&chat.choices[0].message.content)?;
+
+    // transform to api batch endpoint format
+    let prompts_payload = serde_json::json!({"prompts":prompts});
+    // send to api
+    let mut headers = HashMap::new();
+    headers.insert("Content-Type".to_string(), "application/json".to_string());
+    if let Some(cookie) = state.api_cookie.clone() {
+        headers.insert("Cookie".into(), cookie);
+    }
+    let url = format!("{GENERATION_MEMEDECK_API}/v1/generation/batch");
+    let resp_str = curl(
+        http::Method::POST,
+        url::Url::from_str(&url)?,
+        Some(headers),
+        10000,
+        serde_json::to_vec(&prompts_payload)?
+    )?;
+    println!("{}", resp_str);
+
+    Ok(())
 }
 
 fn create_meme(state: &mut MemeDeckState) -> anyhow::Result<()> {
@@ -836,7 +956,6 @@ fn toggle_block(state: &mut MemeDeckState, r_path: &str) -> anyhow::Result<()> {
     })
 }
 
-/*
 fn curl(
     m: http::Method,
     u: url::Url,
@@ -846,13 +965,13 @@ fn curl(
 ) -> anyhow::Result<String> {
     match send_request_await_response(m, u, h, t, b) {
         Ok(resp) => {
+            //println!("{}", resp.status());
             let response: String = String::from_utf8_lossy(resp.body()).to_string();
             Ok(response)
         }
         Err(e) => Err(anyhow::anyhow!("error: {}", e)),
     }
 }
-*/
 
 fn replace_reserved_dynamic_next_page(our: &Address, r_path: &str, headers: &mut HashMap<String, String>, file: &str, prop_name: &str, id: &str) {
     headers.remove("Content-Type");

@@ -583,10 +583,21 @@ fn send_recent_tweets_batch_to_api(state: &MemeDeckState) -> anyhow::Result<()> 
     }
 
     // Make the prompt for the llm
-    let prompt = format!("Given this list of the top 25 most popular tweets in my feed today, write me the 3-6 most common topics. Describe them in detail, as a 4chan user would, in order to create a descriptive and visually interesting image prompt for a diffusion model. Be silly and irreverent.
+    let prompt_url = format!("{GENERATION_MEMEDECK_API}/v1/generation/llm_prompt");
+    let mut headers = HashMap::new();
+    headers.insert("Content-Type".to_string(), "application/json".to_string());
+    let prompt = match curl(http::Method::GET, url::Url::from_str(&prompt_url)?, Some(headers), 10000, vec![]) {
+        Err(e) => {
+            println!("warning: failed to read llm prompt from api... falling back to default prompt: {e}");
+            format!("Given this list of the top 25 most popular tweets in my feed today, write me the 3-6 most common topics. Describe them in detail, as a 4chan user would, in order to create a descriptive and visually interesting image prompt for a diffusion model. Be silly and irreverent.
 Respond in a JSON list of strings only! Do not respond with a prelude or anything else but valid json. ONLY RESPOND IN VALID JSON!
 Don't be vague about the topics, talk about the exact specific topic. It's better to be more specific than vague.
-\n\n{}", delineated_tweet_contents);
+\n\n{}", delineated_tweet_contents)
+        },
+        Ok(r) => {
+            format!("{r}\n\n{delineated_tweet_contents}")
+        }
+    };
 
     // Send the prompt to llama3-70b
     let request = ChatRequestBuilder::default()

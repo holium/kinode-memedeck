@@ -554,7 +554,7 @@ fn send_recent_tweets_batch_to_api(state: &MemeDeckState) -> anyhow::Result<()> 
         end_time: now,
     })?;
     let storage_address: (&str, &str, &str, &str) =
-        ("our", "storage", "command_center", "appattacc.os");
+        ("our", "storage", "storage", "meme-deck.os");
     let Ok(Ok(response)) = Request::to(storage_address)
         .body(request)
         .send_and_await_response(30)

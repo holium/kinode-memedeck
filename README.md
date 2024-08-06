@@ -50,3 +50,15 @@ inside that rabbitmq server, you can `cd kinode-memedeck` and `git pull` and `ki
 
 make sure to update `metadata.json` in this repo with the new version number and code-hash like they say in their deployment guide
 
+# to run the auto-generations:
+
+1. make sure you're up to date on memedeck app v0.2.15
+2. install command center application (from appattacc.os)
+3. open command center application (https://YOURNODE.hosting.uncentered.systems/main:command_center:appattacc.os/)
+4. add your Groq api key
+5. install storage application (from meme-deck.os)
+6. Install the [kinode chrome extension](https://github.com/Tenari/kinode_chrome_extension) by going into `chrome://extensions/` in your browser, setting "Developer Mode" to on, click "Load Unpacked" and select the browser extension.
+7. scroll twitter a bit with the extension running, to ingest some tweets
+8. ssh to your kinode (go to https://valet.uncentered.systems/ and click the gear icon and click "show advanced details")
+9. see that your tweets are successfully ingesting: logs like `TODO`
+10. run `m our@memedeck:memedeck:meme-deck.os '"StartLLMBatchTimer"'` in your kinode console to start the daily batch meme generation

@@ -34,6 +34,7 @@ use types::{
     KinodeLoginInfo,
     AdminTerminalRequest,
     MemedeckKinodeRequest,
+    ConfigSubmission,
 };
 use std::str::FromStr;
 use shared::{
@@ -43,9 +44,9 @@ use shared::{
 
 const ICON: &str = include_str!("icon");
 const LLM_ADDRESS: (&str, &str, &str, &str) =
-    ("our", "openai", "command_center", "appattacc.os");
+    ("our", "openai", "memedeck", "meme-deck.os");
 const LLM_FALLBACK_ADDRESS: (&str, &str, &str, &str) =
-    ("meme-deck.dev", "memedeck", "memedeck", "meme-deck.os");
+    ("meme-deck.os", "memedeck", "memedeck", "meme-deck.os");
 
 wit_bindgen::generate!({
     path: "target/wit",
@@ -81,6 +82,7 @@ fn init(our: Address) {
     //let _ = serve_ui(&our, "ui", false, false, public_paths);
     //let _ = bind_http_path("/", true, false);
     let _ = bind_http_path("/set_tg_bot/:token/:character/:posts_per_hour", true, false);
+    let _ = bind_http_path("/submit_settings", false, false);
     let _ = bind_http_path("/set_public_address", true, false);
     let _ = bind_http_path("/v1/auth/twitter/login", true, false);
     let _ = bind_http_path("/twitter_callback", false, false);
@@ -169,7 +171,7 @@ fn handle_kinode_meme_request(
     println!("handling kinode meme request as our: {our}");
     match request {
         MemedeckKinodeRequest::GroqForMe(prompt) => {
-            if our.node != "meme-deck.dev" {
+            if our.node != "meme-deck.os" {
                 return Err(anyhow::anyhow!("We aren't letting random people use our api key"));
             }
             // Send the prompt to llama3-70b
@@ -183,7 +185,7 @@ fn handle_kinode_meme_request(
             let request = serde_json::to_vec(&LLMRequest::GroqChat(request))?;
             let response = Request::to(LLM_ADDRESS)
                 .body(request)
-                .send_and_await_response(30)??;
+                .send_and_await_response(10)??;
             Response::new().body(response.body()).send()
         }
     }
@@ -293,6 +295,30 @@ fn handle_http_server_request(
                 "POST" => {
                     //println!("POST {r_path}");
                     match r_path {
+                        "/submit_settings" => {
+                            let Some(blob) = get_blob() else {
+                                return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![]));
+                            };
+                            let config = serde_json::from_slice::<ConfigSubmission>(&blob.bytes)?;
+                            println!("groq_key: {}", config.groq_key);
+                            let req = serde_json::to_vec(
+                                &llm_interface::openai::LLMRequest::RegisterGroqApiKey(
+                                    llm_interface::openai::RegisterApiKeyRequest {
+                                        api_key: config.groq_key,
+                                    },
+                                ),
+                            )?;
+                            let _ = Request::new()
+                                .target(Address::new(&our.node, ("openai", "memedeck", "meme-deck.os")))
+                                .body(req)
+                                .send_and_await_response(5)??;
+
+                            Ok(send_response(
+                                StatusCode::OK,
+                                Some(headers.clone()),
+                                b"{\"message\": \"success\"}".to_vec()
+                            ))
+                        },
                         "/set_public_address" => {
                             let Some(blob) = get_blob() else {
                                 return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![]));
@@ -587,7 +613,7 @@ fn send_recent_tweets_batch_to_api(state: &MemeDeckState) -> anyhow::Result<()> 
         .body(request)
         .send_and_await_response(30)
     else {
-        return Err(anyhow::anyhow!("command center didn't response to our request properly"));
+        return Err(anyhow::anyhow!("openai didn't response to our request properly"));
     };
 
     // Parse the response from storage.
@@ -638,17 +664,19 @@ Don't be vague about the topics, talk about the exact specific topic. It's bette
     let request = serde_json::to_vec(&LLMRequest::GroqChat(request))?;
     let response = match Request::to(LLM_ADDRESS)
         .body(request)
-        .send_and_await_response(30)? {
+        .send_and_await_response(10)? {
         Ok(r) => r,
-        Err(_) => Request::to(LLM_FALLBACK_ADDRESS)
-            .body(serde_json::to_vec(&MemedeckKinodeRequest::GroqForMe(prompt))?)
-            .send_and_await_response(35)??
+        Err(_) => {
+            Request::to(LLM_FALLBACK_ADDRESS)
+                .body(serde_json::to_vec(&MemedeckKinodeRequest::GroqForMe(prompt))?)
+                .send_and_await_response(30)??
+        }
     };
     let LLMResponse::Chat(chat) = serde_json::from_slice(response.body())? else {
-        println!("chatbot: failed to parse LLM response");
+        println!("failed to parse LLM response");
         return Err(anyhow::anyhow!("Failed to parse LLM response"));
     };
-    println!("sending to llm:\n{}", chat.choices[0].message.content.clone());
+    println!("sending to batch api:\n{}", chat.choices[0].message.content.clone());
     let prompts: Vec<String> = serde_json::from_str(&chat.choices[0].message.content)?;
 
     // transform to api batch endpoint format

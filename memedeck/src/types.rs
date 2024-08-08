@@ -168,11 +168,6 @@ pub enum AdminTerminalRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct FrankensteinBotDetails {
-    pub first_name: String,
-    pub last_name: Option<String>,
-    pub username: Option<String>,
-    pub language_code: Option<String>,
-    pub can_join_groups: Option<bool>,
+pub enum MemedeckKinodeRequest {
+    GroqForMe(String),
 }
-

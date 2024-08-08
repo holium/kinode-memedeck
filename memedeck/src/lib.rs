@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 use kinode_process_lib::{
     await_message, call_init, println, Address, ProcessId,
-    Message, get_blob, http, Request, spawn, OnExit,
+    Message, get_blob, http, Request, Response, spawn, OnExit,
     http::{
         serve_ui,
         HttpServerRequest, send_response, StatusCode,
@@ -33,6 +33,7 @@ use types::{
     TwitterProfile,
     KinodeLoginInfo,
     AdminTerminalRequest,
+    MemedeckKinodeRequest,
 };
 use std::str::FromStr;
 use shared::{
@@ -43,6 +44,8 @@ use shared::{
 const ICON: &str = include_str!("icon");
 const LLM_ADDRESS: (&str, &str, &str, &str) =
     ("our", "openai", "command_center", "appattacc.os");
+const LLM_FALLBACK_ADDRESS: (&str, &str, &str, &str) =
+    ("meme-deck.dev", "memedeck", "memedeck", "meme-deck.os");
 
 wit_bindgen::generate!({
     path: "target/wit",
@@ -148,16 +151,41 @@ fn handle_request(
         //it's a response which currently we only accept from timer
         send_recent_tweets_batch_to_api(state)
     } else if message.source().node != our.node {
-        /*
-         * TODO: actually implement node-to-node communications
-        let Ok(meme_request) = serde_json::from_slice::<MemeDeckRequest>(message.body()) else {
+        println!("message source: {:?}", message.source());
+        let Ok(meme_request) = serde_json::from_slice::<MemedeckKinodeRequest>(message.body()) else {
             return Err(anyhow::anyhow!("invalid meme deck request"));
         };
-        handle_kinode_meme_request(our, &message.source().node, state, &meme_request)
-        */
-        Err(anyhow::anyhow!("no protocol yet"))
+        handle_kinode_meme_request(our, state, meme_request)
     } else {
         Err(anyhow::anyhow!("unhandled message type"))
+    }
+}
+
+fn handle_kinode_meme_request(
+    our: &Address,
+    state: &mut MemeDeckState,
+    request: MemedeckKinodeRequest
+) -> anyhow::Result<()> {
+    println!("handling kinode meme request as our: {our}");
+    match request {
+        MemedeckKinodeRequest::GroqForMe(prompt) => {
+            if our.node != "meme-deck.dev" {
+                return Err(anyhow::anyhow!("We aren't letting random people use our api key"));
+            }
+            // Send the prompt to llama3-70b
+            let request = ChatRequestBuilder::default()
+                .model("llama3-70b-8192".to_string())
+                .messages(vec![MessageBuilder::default()
+                    .role("user".to_string())
+                    .content(prompt.clone())
+                    .build()?])
+                .build()?;
+            let request = serde_json::to_vec(&LLMRequest::GroqChat(request))?;
+            let response = Request::to(LLM_ADDRESS)
+                .body(request)
+                .send_and_await_response(30)??;
+            Response::new().body(response.body()).send()
+        }
     }
 }
 
@@ -407,7 +435,7 @@ fn start_tg(our: &Address, state: &mut MemeDeckState, token: &str) -> anyhow::Re
     // give spawned process both our caps, and grant http_client messaging.
     let http_client = ProcessId::from_str("http_client:distro:sys").unwrap();
     let process_id = spawn(
-        None,
+        Some("tg"),
         &tg_bot_wasm_path,
         OnExit::None,
         our_capabilities(),
@@ -554,7 +582,7 @@ fn send_recent_tweets_batch_to_api(state: &MemeDeckState) -> anyhow::Result<()> 
         end_time: now,
     })?;
     let storage_address: (&str, &str, &str, &str) =
-        ("our", "storage", "storage", "meme-deck.os");
+        ("our", "storage", "memedeck", "meme-deck.os");
     let Ok(Ok(response)) = Request::to(storage_address)
         .body(request)
         .send_and_await_response(30)
@@ -604,13 +632,18 @@ Don't be vague about the topics, talk about the exact specific topic. It's bette
         .model("llama3-70b-8192".to_string())
         .messages(vec![MessageBuilder::default()
             .role("user".to_string())
-            .content(prompt)
+            .content(prompt.clone())
             .build()?])
         .build()?;
     let request = serde_json::to_vec(&LLMRequest::GroqChat(request))?;
-    let response = Request::to(LLM_ADDRESS)
+    let response = match Request::to(LLM_ADDRESS)
         .body(request)
-        .send_and_await_response(30)??;
+        .send_and_await_response(30)? {
+        Ok(r) => r,
+        Err(_) => Request::to(LLM_FALLBACK_ADDRESS)
+            .body(serde_json::to_vec(&MemedeckKinodeRequest::GroqForMe(prompt))?)
+            .send_and_await_response(35)??
+    };
     let LLMResponse::Chat(chat) = serde_json::from_slice(response.body())? else {
         println!("chatbot: failed to parse LLM response");
         return Err(anyhow::anyhow!("Failed to parse LLM response"));
@@ -634,7 +667,7 @@ Don't be vague about the topics, talk about the exact specific topic. It's bette
         10000,
         serde_json::to_vec(&prompts_payload)?
     )?;
-    println!("{}", resp_str);
+    println!("api batch response: {}", resp_str);
 
     Ok(())
 }

@@ -14,5 +14,21 @@
         ],
         "grant_capabilities": [],
         "public": true
+    },
+    {
+        "process_name": "storage",
+        "process_wasm_path": "/storage.wasm",
+        "on_exit": "Restart",
+        "request_networking": true,
+        "request_capabilities": [
+            "http_server:distro:sys",
+            "http_client:distro:sys",
+            "vfs:distro:sys"
+        ],
+        "grant_capabilities": [
+            "http_client:distro:sys",
+            "http_server:distro:sys"
+        ],
+        "public": true
     }
 ]

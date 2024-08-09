@@ -116,6 +116,7 @@ pub struct MemeDeckState {
     pub tg_character_id: Option<String>,
     pub tg_posts_per_hour: u64,
     pub timer_is_set: bool,
+    pub should_create_images_dir: bool,
 }
 impl MemeDeckState {
     pub fn save(&self) {
@@ -140,6 +141,7 @@ impl MemeDeckState {
                 tg_character_id: None,
                 tg_posts_per_hour: 60,
                 timer_is_set: false,
+                should_create_images_dir: true,
             },
         }
     }

@@ -12,7 +12,7 @@ use kinode_process_lib::{
         unbind_http_path,
         send_request_await_response, IncomingHttpRequest,
     },
-    vfs::open_file,
+    vfs::{create_drive, open_file, create_file, open_dir},
     our_capabilities,
     timer::set_timer,
 };
@@ -106,6 +106,41 @@ fn init(our: Address) {
     let _ = bind_http_path("/_next/image", true, false);
 
     let mut state = MemeDeckState::load();
+
+    // rebind all the local images
+    let Ok(drive_path) = create_drive(our.package_id(), "img", None) else {
+        return println!("can't create_drive {}/img", our.package_id());
+    };
+    let Ok(dir) = open_dir(&format!("{drive_path}/images"), state.should_create_images_dir, None) else {
+        return println!("coudln't open images dir {drive_path}/images");
+    };
+    state.should_create_images_dir = false;
+    state.save();
+    if let Ok(entries) = dir.read() {
+        for img in entries {
+            let Ok(file) = open_file(&img.path.clone(), false, None) else {
+                return println!("open_file failed {}", img.path);
+            };
+            let Ok(contents) = file.read() else {
+                return println!("couldn't read file {}", img.path);
+            };
+            let path = img.path.clone();
+            let content_type = match path.split(".").last() {
+                Some(s) => s,
+                None => "jpeg"
+            };
+            let mut iter = img.path.split("/");
+            let _ = iter.next();
+            let _ = iter.next();
+            let bind_path_vec: Vec<&str> = iter.collect();
+            let bind_path = bind_path_vec.join("/");
+            println!("binding {bind_path}");
+            let _ = bind_http_static_path(bind_path, false, false, Some(format!("image/{content_type}")), contents);
+        }
+        println!("done binding static images");
+    } else {
+        println!("couldn't get the entires from images dir");
+    };
 
     // start sub-processes if we know the needed info for them
     if let Some(token) = state.telegram_token.clone() {
@@ -336,7 +371,7 @@ fn handle_http_server_request(
                                 )?,
                             ))
                         }
-                        "/v1/memes" => create_meme(state),
+                        "/v1/memes" => create_meme(our, state),
                         _ if { r_path.starts_with("/v1/memes/") && r_path.ends_with("/composed-upload") } => {
                             let parts: Vec<&str> = r_path.split("/").collect();
                             let meme_id = parts[3];
@@ -700,14 +735,19 @@ Don't be vague about the topics, talk about the exact specific topic. It's bette
     Ok(())
 }
 
-fn create_meme(state: &mut MemeDeckState) -> anyhow::Result<()> {
+fn create_meme(our: &Address, state: &mut MemeDeckState) -> anyhow::Result<()> {
     let Some(blob) = get_blob() else {
         return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![]));
     };
     // Extract the URL from the request body
     let mut upload_data = serde_json::from_slice::<CreateMemeRequest>(&blob.bytes)?;
     // 1. generate unique filename, save the file to vfs
-    let filename = format!("images/{}", Uuid::new_v4().to_string().replace("-", "_"));
+    let content_type = upload_data.filetype.clone();
+    let extension = match content_type.split("/").last() {
+        Some(s) => s,
+        None => "png",
+    };
+    let filename = format!("images/{}.{extension}", Uuid::new_v4().to_string().replace("-", "_") );
     let bytes = match upload_data.bytes.clone() {
         Some(b) => b,
         None => {
@@ -718,13 +758,14 @@ fn create_meme(state: &mut MemeDeckState) -> anyhow::Result<()> {
                 10000,
                 vec![],
             ) {
-                Ok(resp) => {
-                    resp.body().clone()
-                }
+                Ok(resp) => resp.body().clone(),
                 Err(_) => return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![])),
             }
         }
     };
+    let file = create_file(&format!("{}/img/{filename}", our.package_id()), None)?;
+    println!("{filename}");
+    file.write(&bytes)?;
     // 2. Make the file publically accessible
     bind_http_static_path(&filename, false, false, Some(upload_data.filetype.clone()), bytes)?;
     // 3. POST it to the api, so that it can save the metadata to the graph

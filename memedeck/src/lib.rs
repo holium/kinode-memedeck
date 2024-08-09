@@ -35,6 +35,7 @@ use types::{
     AdminTerminalRequest,
     MemedeckKinodeRequest,
     ConfigSubmission,
+    NewGeneratedImage,
 };
 use std::str::FromStr;
 use shared::{
@@ -82,6 +83,7 @@ fn init(our: Address) {
     //let _ = serve_ui(&our, "ui", false, false, public_paths);
     //let _ = bind_http_path("/", true, false);
     let _ = bind_http_path("/set_tg_bot/:token/:character/:posts_per_hour", true, false);
+    let _ = bind_http_path("/new_generated_image", false, false);
     let _ = bind_http_path("/submit_settings", false, false);
     let _ = bind_http_path("/set_public_address", true, false);
     let _ = bind_http_path("/v1/auth/twitter/login", true, false);
@@ -192,7 +194,7 @@ fn handle_request(
         let Ok(meme_request) = serde_json::from_slice::<MemedeckKinodeRequest>(message.body()) else {
             return Err(anyhow::anyhow!("invalid meme deck request"));
         };
-        handle_kinode_meme_request(our, state, meme_request)
+        handle_kinode_meme_request(our, meme_request)
     } else {
         Err(anyhow::anyhow!("unhandled message type"))
     }
@@ -200,7 +202,6 @@ fn handle_request(
 
 fn handle_kinode_meme_request(
     our: &Address,
-    state: &mut MemeDeckState,
     request: MemedeckKinodeRequest
 ) -> anyhow::Result<()> {
     println!("handling kinode meme request as our: {our}");
@@ -330,6 +331,38 @@ fn handle_http_server_request(
                 "POST" => {
                     //println!("POST {r_path}");
                     match r_path {
+                        "/new_generated_image" => {
+                            let Some(blob) = get_blob() else {
+                                return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![]));
+                            };
+                            let details = serde_json::from_slice::<NewGeneratedImage>(&blob.bytes)?;
+                            let bytes = match send_request_await_response(
+                                http::Method::GET,
+                                url::Url::parse(&details.url)?,
+                                None,
+                                10000,
+                                vec![],
+                            ) {
+                                Ok(resp) => resp.body().clone(),
+                                Err(_) => return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![])),
+                            };
+                            let file = create_file(&format!("{}/img/images/{}.{}", our.package_id(), details.name, details.filetype), None)?;
+                            file.write(&bytes)?;
+                            // 2. Make the file publically accessible
+                            let access_path = format!("images/{}.{}", details.name, details.filetype);
+                            bind_http_static_path(
+                                &access_path,
+                                false,
+                                false,
+                                Some(format!("image/{}", details.filetype)),
+                                bytes
+                            )?;
+                            Ok(send_response(
+                                StatusCode::OK,
+                                Some(headers.clone()),
+                                format!("{}/memedeck:{}/{access_path}", state.public_address, our.package_id()).as_bytes().to_vec()
+                            ))
+                        }
                         "/submit_settings" => {
                             let Some(blob) = get_blob() else {
                                 return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![]));

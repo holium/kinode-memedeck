@@ -100,6 +100,12 @@ pub struct PublicAddress {
 pub struct ConfigSubmission {
     pub groq_key: String
 }
+#[derive(Deserialize)]
+pub struct NewGeneratedImage {
+    pub url: String,
+    pub filetype: String,
+    pub name: String,
+}
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MemeDeckState {
     pub twitter: TwitterRequestToken,

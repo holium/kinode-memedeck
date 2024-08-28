@@ -60,21 +60,12 @@ fn init(our: Address) {
     println!("memedeck: started");
 
     // add ourselves to the homepage
-    Request::to(("our", "homepage", "homepage", "sys"))
-        .body(
-            serde_json::json!({
-                "Add": {
-                    "label": "MemeDeck",
-                    "icon": ICON,
-                    "path": "/", // just our root
-                }
-            })
-            .to_string()
-            .as_bytes()
-            .to_vec(),
-        )
-        .send()
-        .unwrap();
+    kinode_process_lib::homepage::add_to_homepage(
+        "MemeDeck",
+        Some(ICON),
+        Some("/"),
+        None, // widget
+    );
 
     let private_paths = vec!["/", "/_next/static/*", "/trending", "/home", "/library", "/library/saved", "/library/uploads", "/search", "/telegram-bot", "/studio"];
     let public_paths = vec!["/images", "/favicon.ico"];

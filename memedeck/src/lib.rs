@@ -76,7 +76,7 @@ fn init(our: Address) {
         .send()
         .unwrap();
 
-    let private_paths = vec!["/", "/_next/static/*", "/trending", "/home", "/library", "/library/saved", "/library/uploads", "/search", "/telegram-bot"];
+    let private_paths = vec!["/", "/_next/static/*", "/trending", "/home", "/library", "/library/saved", "/library/uploads", "/search", "/telegram-bot", "/studio"];
     let public_paths = vec!["/images", "/favicon.ico"];
     let _ = serve_ui(&our, "ui", true, false, private_paths);
     let _ = serve_ui(&our, "ui", false, false, public_paths);
@@ -86,13 +86,13 @@ fn init(our: Address) {
     let _ = bind_http_path("/new_generated_image", false, false);
     let _ = bind_http_path("/submit_settings", false, false);
     let _ = bind_http_path("/set_public_address", true, false);
-    let _ = bind_http_path("/v1/auth/twitter/login", true, false);
+    let _ = bind_http_path("/v2/auth/twitter/login", true, false);
     let _ = bind_http_path("/twitter_callback", false, false);
-    let _ = bind_http_path("/v1/memes", true, false);
-    let _ = bind_http_path("/v1/memes/:meme_id", true, false);
-    let _ = bind_http_path("/v1/memes/:meme_id/composed-upload", true, false);
-    let _ = bind_http_path("/v1/memes/:meme_id/panel/:panel_id", true, false);
-    let _ = bind_http_path("/v1/memes/:meme_id/panel/:panel_id/faceswap-upload", true, false);
+    let _ = bind_http_path("/v2/images", true, false);
+    let _ = bind_http_path("/v2/memes/:meme_id", true, false);
+    let _ = bind_http_path("/v2/memes/:meme_id/composed-upload", true, false);
+    let _ = bind_http_path("/v2/memes/:meme_id/panel/:panel_id", true, false);
+    let _ = bind_http_path("/v2/memes/:meme_id/panel/:panel_id/faceswap-upload", true, false);
     let _ = bind_http_path("/v1/*", true, false);
     let _ = bind_http_path("/v2/*", true, false);
     let _ = bind_http_path("/deck/edit/:deck_id", true, false);
@@ -259,7 +259,7 @@ fn handle_http_server_request(
                     // Route to appropriate endpoint based on the path
                     match b_path {
                         "/twitter_callback" => get_oauth_callback(our, state, headers, request),
-                        "/v1/auth/twitter/login" => get_login_with_twitter(our, state, request),
+                        "/v2/auth/twitter/login" => get_login_with_twitter(our, state, request),
                         "/_next/image" => {
                             let params = request.query_params();
                             headers.remove("Content-Type");
@@ -268,12 +268,12 @@ fn handle_http_server_request(
                         }
                         "/deck/:id" => Ok(replace_reserved_dynamic_next_page(
                             our, r_path, &mut headers,
-                            "deck/reserved", "id",
+                            "deck/reserved", "deckId",
                             request.url_params().get("id").unwrap()
                         )),
                         "/deck/:id/edit" => Ok(replace_reserved_dynamic_next_page(
                             our, r_path, &mut headers,
-                            "deck/reserved/edit", "id",
+                            "deck/reserved/edit", "deckId",
                             request.url_params().get("id").unwrap()
                         )),
                         "/home/:meme_id" => Ok(replace_reserved_dynamic_next_page(
@@ -368,7 +368,7 @@ fn handle_http_server_request(
                                 return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![]));
                             };
                             let config = serde_json::from_slice::<ConfigSubmission>(&blob.bytes)?;
-                            println!("groq_key: {}", config.groq_key);
+                            //println!("groq_key: {}", config.groq_key);
                             let req = serde_json::to_vec(
                                 &llm_interface::openai::LLMRequest::RegisterGroqApiKey(
                                     llm_interface::openai::RegisterApiKeyRequest {
@@ -404,14 +404,14 @@ fn handle_http_server_request(
                                 )?,
                             ))
                         }
-                        "/v1/memes" => create_meme(our, state),
-                        _ if { r_path.starts_with("/v1/memes/") && r_path.ends_with("/composed-upload") } => {
+                        "/v2/images" => create_meme(our, state),
+                        _ if { r_path.starts_with("/v2/memes/") && r_path.ends_with("/composed-upload") } => {
                             let parts: Vec<&str> = r_path.split("/").collect();
                             let meme_id = parts[3];
                             let meme_id_str = meme_id.to_string();
                             return composed_upload(state, &meme_id_str);
                         }
-                        _ if { r_path.starts_with("/v1/memes/") && r_path.ends_with("/faceswap-upload") } => {
+                        _ if { r_path.starts_with("/v2/memes/") && r_path.ends_with("/faceswap-upload") } => {
                             let parts: Vec<&str> = r_path.split("/").collect();
                             let meme_id = parts[3];
                             let meme_id_str = meme_id.to_string();
@@ -431,14 +431,6 @@ fn handle_http_server_request(
                                 headers.clone()
                             )
                         },
-                        _ if { r_path.starts_with("/toggle_follow/") } => {
-                            //println!("{:?}", request);
-                            toggle_follow(state, r_path)
-                        }
-                        _ if { r_path.starts_with("/toggle_block/") } => {
-                            //println!("{:?}", request);
-                            toggle_block(state, r_path)
-                        }
                         _ if { r_path.starts_with("/set_tg_bot/") } => {
                             let token = request.url_params().get("token").unwrap();
                             let character = request.url_params().get("character").unwrap();
@@ -472,7 +464,7 @@ fn handle_http_server_request(
                 "DELETE" => {
                     //println!("DELETE {r_path}");
                     match b_path {
-                        "/v1/memes/:meme_id" => delete_meme(state, request.url_params().get("meme_id").unwrap()),
+                        "/v2/memes/:meme_id" => delete_meme(state, request.url_params().get("meme_id").unwrap()),
                         _ if { r_path.starts_with("/v1/") || r_path.starts_with("/v2/") } => {
                             let blob = match get_blob() {
                                 Some(blob) => blob.bytes,
@@ -705,7 +697,7 @@ fn send_recent_tweets_batch_to_api(state: &MemeDeckState) -> anyhow::Result<()> 
     }
 
     // Make the prompt for the llm
-    let prompt_url = format!("{GENERATION_MEMEDECK_API}/v1/generation/llm_prompt");
+    let prompt_url = format!("{GENERATION_MEMEDECK_API}/v2/generation/llm_prompt");
     let mut headers = HashMap::new();
     headers.insert("Content-Type".to_string(), "application/json".to_string());
     let prompt = match curl(http::Method::GET, url::Url::from_str(&prompt_url)?, Some(headers), 10000, vec![]) {
@@ -755,7 +747,7 @@ Don't be vague about the topics, talk about the exact specific topic. It's bette
     if let Some(cookie) = state.api_cookie.clone() {
         headers.insert("Cookie".into(), cookie);
     }
-    let url = format!("{GENERATION_MEMEDECK_API}/v1/generation/batch");
+    let url = format!("{GENERATION_MEMEDECK_API}/v2/generation/batch");
     let resp_str = curl(
         http::Method::POST,
         url::Url::from_str(&url)?,
@@ -797,7 +789,6 @@ fn create_meme(our: &Address, state: &mut MemeDeckState) -> anyhow::Result<()> {
         }
     };
     let file = create_file(&format!("{}/img/{filename}", our.package_id()), None)?;
-    println!("{filename}");
     file.write(&bytes)?;
     // 2. Make the file publically accessible
     bind_http_static_path(&filename, false, false, Some(upload_data.filetype.clone()), bytes)?;
@@ -808,7 +799,7 @@ fn create_meme(our: &Address, state: &mut MemeDeckState) -> anyhow::Result<()> {
     api_headers.insert("cookie".to_string(), state.api_cookie.clone().unwrap_or("".into()));
     match send_request_await_response(
         http::Method::POST,
-        url::Url::parse(&format!("{MEMEDECK_API}/v1/memes"))?,
+        url::Url::parse(&format!("{MEMEDECK_API}/v2/images"))?,
         Some(api_headers),
         10000,
         serde_json::to_vec(&upload_data)?,
@@ -833,7 +824,7 @@ fn delete_meme(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Result<()
     api_headers.insert("cookie".to_string(), state.api_cookie.clone().unwrap_or("".into()));
     match send_request_await_response(
         http::Method::DELETE,
-        url::Url::parse(&format!("{MEMEDECK_API}/v1/memes/{meme_id}"))?,
+        url::Url::parse(&format!("{MEMEDECK_API}/v2/memes/{meme_id}"))?,
         Some(api_headers),
         10000,
         vec![],
@@ -849,7 +840,6 @@ fn delete_meme(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Result<()
 }
 
 fn composed_upload(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Result<()> {
-    //println!("composed_upload for meme_id: {meme_id}");
     let Some(blob) = get_blob() else {
         return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![]));
     };
@@ -884,11 +874,10 @@ fn composed_upload(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Resul
     api_headers.insert("cookie".to_string(), state.api_cookie.clone().unwrap_or("".into()));
 
     let _payload_body_str = String::from_utf8_lossy(&payload_body).to_string();
-    //println!("sending to api: {payload_body_str}");
 
     match send_request_await_response(
         http::Method::POST,
-        url::Url::parse(&format!("{MEMEDECK_API}/v1/memes/{meme_id}/composed-upload"))?,
+        url::Url::parse(&format!("{MEMEDECK_API}/v2/memes/{meme_id}/composed-upload"))?,
         Some(api_headers),
         10000,
         payload_body
@@ -897,8 +886,6 @@ fn composed_upload(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Resul
             let mut response_headers = HashMap::new();
             response_headers.insert("content-type".to_string(), "application/json".to_string());
             // 4. Proxy/return the response of the API to the client
-            let _resp_string = String::from_utf8_lossy(resp.body()).to_string();
-            //println!("resp_string {resp_string}");
             Ok(send_response(resp.status(), Some(response_headers), resp.body().clone()))
         }
         Err(_) => Ok(send_response(StatusCode::BAD_REQUEST, None, vec![])),
@@ -906,7 +893,6 @@ fn composed_upload(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Resul
 }
 
 fn faceswap_upload(state: &mut MemeDeckState, meme_id: &String, panel_id: &String) -> anyhow::Result<()> {
-    //println!("faceswap_upload for meme_id: {meme_id}, panel_id: {panel_id}");
     let Some(blob) = get_blob() else {
         return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![]));
     };
@@ -937,12 +923,9 @@ fn faceswap_upload(state: &mut MemeDeckState, meme_id: &String, panel_id: &Strin
     api_headers.insert("content-type".to_string(), "application/json".to_string());
     api_headers.insert("cookie".to_string(), state.api_cookie.clone().unwrap_or("".into()));
 
-    //let payload_body_str = String::from_utf8_lossy(&payload_body).to_string();
-    //println!("sending to api: {payload_body_str}");
-
     match send_request_await_response(
         http::Method::POST,
-        url::Url::parse(&format!("{MEMEDECK_API}/v1/memes/{meme_id}/panel/{panel_id}/faceswap-upload"))?,
+        url::Url::parse(&format!("{MEMEDECK_API}/v2/memes/{meme_id}/panel/{panel_id}/faceswap-upload"))?,
         Some(api_headers),
         10000,
         payload_body
@@ -951,8 +934,6 @@ fn faceswap_upload(state: &mut MemeDeckState, meme_id: &String, panel_id: &Strin
             let mut response_headers = HashMap::new();
             response_headers.insert("content-type".to_string(), "application/json".to_string());
             // 4. Proxy/return the response of the API to the client
-            //let resp_string = String::from_utf8_lossy(resp.body()).to_string();
-            //println!("resp_string {resp_string}");
             Ok(send_response(resp.status(), Some(response_headers), resp.body().clone()))
         }
         Err(_) => Ok(send_response(StatusCode::BAD_REQUEST, None, vec![])),
@@ -965,7 +946,7 @@ fn get_oauth_callback(
     mut headers: HashMap<String, String>,
     request: IncomingHttpRequest,
 ) -> anyhow::Result<()> {
-    //println!("starting kinode oauth callback to twitter");
+    //println!("starting kinode oauth callback to twitter {}", state.public_address);
     let params = request.query_params();
     match params.get("oauth_token") {
         None => Ok(send_response(StatusCode::BAD_REQUEST, None, vec![])),
@@ -974,11 +955,11 @@ fn get_oauth_callback(
             let payload = KinodeLoginInfo {
                 token: oauth_token.clone(),
                 verifier,
-                kinode_location: Some(format!("{}{}", state.public_address, url_pre(our))),
+                kinode_location: Some(state.public_address.clone()),
             };
             let mut api_headers: HashMap<String, String> = HashMap::new();
             api_headers.insert("content-type".into(), "application/json".into());
-            let api_url = format!("{MEMEDECK_API}/v1/auth/twitter/kinode_callback");
+            let api_url = format!("{MEMEDECK_API}/v2/auth/twitter/kinode_callback");
             let (kinode_cookie, profile): (String, TwitterProfile) = match send_request_await_response(
                 http::Method::POST,
                 url::Url::parse(&api_url)?,
@@ -995,7 +976,6 @@ fn get_oauth_callback(
                 }
                 Err(e) => Err(anyhow::anyhow!("error: {}", e)),
             }?;
-            //println!("api cookie: {kinode_cookie}");
             state.api_cookie = Some(format!("{};", kinode_cookie.split(";").next().unwrap_or("")));
             state.profile = Some(profile);
             state.save();
@@ -1012,7 +992,7 @@ fn get_oauth_callback(
 
 fn get_login_with_twitter(our: &Address, state: &mut MemeDeckState, request: IncomingHttpRequest) -> anyhow::Result<()> {
     let url = request.query_params().get("redirect_url").unwrap();
-    let redirect = format!("{MEMEDECK_API}/v1/auth/twitter/kinode_login?redirect_url={url}&kinode_location={}", format!("{}{}", state.public_address, url_pre(our)));
+    let redirect = format!("{MEMEDECK_API}/v2/auth/twitter/kinode_login?redirect_url={url}&kinode_location={}", state.public_address);
     let mut headers = HashMap::new();
     headers.insert("Location".into(), redirect);
     Ok(send_response(
@@ -1020,86 +1000,6 @@ fn get_login_with_twitter(our: &Address, state: &mut MemeDeckState, request: Inc
         Some(headers),
         vec![],
     ))
-}
-
-fn toggle_follow(state: &mut MemeDeckState, r_path: &str) -> anyhow::Result<()> {
-    let parts: Vec<&str> = r_path.split("/").collect();
-    let node_id = parts[2];
-    let toggle = parts[3];
-    let mut iter = state.following.iter();
-    Ok(if toggle == "follow" {
-        match iter.find(|&n| node_id == n) {
-            None => {
-                state.following.push(node_id.into());
-                state.save();
-                send_response(StatusCode::NO_CONTENT, None, vec![]);
-            }
-            Some(_) => {
-                println!("{node_id} already is being followed");
-                send_response(
-                    StatusCode::IM_A_TEAPOT,
-                    None,
-                    serde_json::to_vec(&serde_json::json!("already being followed"))?,
-                );
-            }
-        }
-    } else {
-        match iter.position(|n| node_id == n) {
-            None => {
-                println!("{node_id} already is not being followed");
-                send_response(
-                    StatusCode::IM_A_TEAPOT,
-                    None,
-                    serde_json::to_vec(&serde_json::json!("already not being followed"))?,
-                );
-            }
-            Some(index) => {
-                state.following.swap_remove(index);
-                state.save();
-                send_response(StatusCode::NO_CONTENT, None, vec![]);
-            }
-        }
-    })
-}
-
-fn toggle_block(state: &mut MemeDeckState, r_path: &str) -> anyhow::Result<()> {
-    let parts: Vec<&str> = r_path.split("/").collect();
-    let node_id = parts[2];
-    let toggle = parts[3];
-    let mut iter = state.blocked.iter();
-    Ok(if toggle == "block" {
-        match iter.find(|&n| node_id == n) {
-            None => {
-                state.blocked.push(node_id.into());
-                state.save();
-                send_response(StatusCode::NO_CONTENT, None, vec![]);
-            }
-            Some(_) => {
-                println!("{node_id} already is being blocked");
-                send_response(
-                    StatusCode::IM_A_TEAPOT,
-                    None,
-                    serde_json::to_vec(&serde_json::json!("already being blocked"))?,
-                );
-            }
-        }
-    } else {
-        match iter.position(|n| node_id == n) {
-            None => {
-                println!("{node_id} already is not being blocked");
-                send_response(
-                    StatusCode::IM_A_TEAPOT,
-                    None,
-                    serde_json::to_vec(&serde_json::json!("already not being blocked"))?,
-                );
-            }
-            Some(index) => {
-                state.blocked.swap_remove(index);
-                state.save();
-                send_response(StatusCode::NO_CONTENT, None, vec![]);
-            }
-        }
-    })
 }
 
 fn curl(
@@ -1140,6 +1040,11 @@ fn replace_reserved_dynamic_next_page(our: &Address, r_path: &str, headers: &mut
             if contents.contains(matcher) {
                 let new_str = format!("propsForComponent\\\":{{\\\"params\\\":{{\\\"{prop_name}\\\":\\\"{id}\\\"}}");
                 contents = contents.replace(matcher, &new_str);
+            }
+            let matcher2 = format!(r#"{{\"{prop_name}\":\"$undefined\","#);
+            if contents.contains(&matcher2) {
+                let new_str = format!(r#"{{\":{prop_name}\":\"{id}\","#);
+                contents = contents.replace(&matcher2, &new_str);
             }
             send_response(
                 StatusCode::OK,

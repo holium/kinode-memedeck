@@ -15,11 +15,16 @@ use telegram_interface::*;
 pub const TG_ADDRESS: (&str, &str, &str, &str) = ("our", "tg", "memedeck", "meme-deck.os");
 pub const MEMEDECK_API_PARTIAL: &str = "api.memedeck.xyz";
 pub const MEMEDECK_API: &str = "https://api.memedeck.xyz";
-//pub const GENERATION_MEMEDECK_API: &str = "http://localhost:8079";
-//pub const GENERATION_MEMEDECK_API: &str = "https://staging-generation-api.memedeck.xyz";
 pub const GENERATION_MEMEDECK_API: &str = "https://studio.api.memedeck.xyz";
-// const MEMEDECK_API: &str = "https://staging-api.memedeck.xyz";
-// const MEMEDECK_API: &str = "http://localhost:8080";
+
+//pub const GENERATION_MEMEDECK_API: &str = "https://staging-generation-api.memedeck.xyz";
+//pub const MEMEDECK_API: &str = "https://staging-api.memedeck.xyz";
+//pub const MEMEDECK_API_PARTIAL: &str = "staging-api.memedeck.xyz";
+
+//pub const GENERATION_MEMEDECK_API: &str = "http://localhost:8079";
+//pub const MEMEDECK_API: &str = "http://localhost:8081";
+//pub const MEMEDECK_API_PARTIAL: &str = "localhost:8081";
+
 /// https://url.spec.whatwg.org/#fragment-percent-encode-set
 const FRAGMENT: &AsciiSet = &CONTROLS
     .add(b' ')
@@ -50,9 +55,7 @@ pub enum WorkerRequest {
 }
 
 pub fn proxy(to: &str, method: Method, body: Vec<u8>, mut req_headers: HashMap<String, String>, mut headers: HashMap<String, String>) -> anyhow::Result<()> {
-    println!("proxying {to}");
     req_headers.insert("host".to_string(), MEMEDECK_API_PARTIAL.to_string());
-    //println!("{req_headers:?}");
     match send_request_await_response(
         method, 
         url::Url::parse(to).unwrap(),
@@ -64,7 +67,7 @@ pub fn proxy(to: &str, method: Method, body: Vec<u8>, mut req_headers: HashMap<S
             let body = resp.body();
             //println!("status: {:?}, headers: {:?}", resp.status(), resp.headers());
             match resp.status() {
-                StatusCode::OK => {
+                StatusCode::OK | StatusCode::CREATED => {
                     headers.remove("Content-Type");
                     headers.insert(
                         "Content-Type".to_string(),
@@ -74,7 +77,7 @@ pub fn proxy(to: &str, method: Method, body: Vec<u8>, mut req_headers: HashMap<S
                         }
                     );
                     Ok(send_response(
-                        StatusCode::OK,
+                        resp.status(),
                         Some(headers),
                         body.clone(),
                     ))
@@ -130,45 +133,35 @@ pub fn send_bot_message(text: &str, id: i64, addr: &Address) -> anyhow::Result<T
         .body(send_message_request)
         .send_and_await_response(30)??;
     let TgResponse::SendMessage(message) = serde_json::from_slice(response.body())? else {
-        println!("failed to send message");
         return Err(anyhow::anyhow!("Failed to send message"));
     };
     Ok(message)
 }
 
 pub fn send_bot_photo(pic: &str, caption: &str, chat_id: i64, addr: &Address) -> anyhow::Result<TgMessage> {
-    //println!("send_bot_photo() started");
     let params = SendPhotoParams::builder()
         .chat_id(ChatId::Integer(chat_id))
         .caption(caption)
         .photo(pic.to_string())
         .parse_mode(ParseMode::Html)
         .build();
-    //println!("params built");
     let send_photo_result = serde_json::to_vec(&TgRequest::SendPhoto(params));
     let Ok(send_request) = send_photo_result else {
         let err_msg = format!("{}", send_photo_result.unwrap_err());
-        println!("TgRequest::SendPhoto to json error: {err_msg}");
-        return Err(anyhow::anyhow!("{err_msg}"));
+        return Err(anyhow::anyhow!("TgRequest::SendPhoto to json error: {err_msg}"));
     };
-    //println!("json parsed to the send_photo TgRequest");
-    //println!("requesting to {addr} with {send_request:?}");
     let response = Request::to(addr)
         .body(send_request)
         .send_and_await_response(30);
-    //println!("request call complete");
     let Ok(response) = response else {
         let err_msg = format!("{}", response.unwrap_err());
-        println!("Request to {addr} send_and_await_response1 error: {err_msg}");
-        return Err(anyhow::anyhow!("{err_msg}"));
+        return Err(anyhow::anyhow!("Request to {addr} send_and_await_response1 error: {err_msg}"));
     };
     let Ok(response) = response else {
         let err_msg = format!("{}", response.unwrap_err());
-        println!("Request to {addr} send_and_await_response2 error: {err_msg}");
-        return Err(anyhow::anyhow!("{err_msg}"));
+        return Err(anyhow::anyhow!("Request to {addr} send_and_await_response2 error: {err_msg}"));
     };
     let TgResponse::SendPhoto(message) = serde_json::from_slice(response.body())? else {
-        println!("failed to send photo");
         return Err(anyhow::anyhow!("Failed to send message"));
     };
     Ok(message)

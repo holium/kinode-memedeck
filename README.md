@@ -50,6 +50,13 @@ inside that rabbitmq server, you can `cd kinode-memedeck` and `git pull` and `ki
 
 make sure to update `metadata.json` in this repo with the new version number and code-hash like they say in their deployment guide
 
+# to test tg bot:
+
+```
+m our@memedeck:memedeck:meme-deck.os '{"SetToken":"7021724700:AAEOjrR4_S0Pp_jaIGVQB6aCAW90Y9UmRYw"}'
+m our@memedeck:memedeck:meme-deck.os '{"StartCharacterMonitorBot":{"chat_id":-4278984459,"character":"pepe"}}'
+```
+
 # to run the auto-generations:
 
 1. make sure you're up to date on memedeck app v0.2.17 on your kinode by checking the App Store -> Memedeck
@@ -61,3 +68,4 @@ make sure to update `metadata.json` in this repo with the new version number and
 7. see that your tweets are successfully ingesting with logs like `Mon 16:23 memedeck:meme-deck.os: Inserted tweet 1823026845928870164`
 8. run `m our@memedeck:memedeck:meme-deck.os '"StartLLMBatchTimer"'` in your kinode console to start the daily batch meme generation
 9. run `m our@memedeck:memedeck:meme-deck.os '"CreatePromptBatchFromTweets"'` in your kinode console to manually trigger a batch at any time
+

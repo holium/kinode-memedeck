@@ -52,11 +52,21 @@ struct MemeSearchResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct MemeSearchItem {
     id: String,
-    creator_name: String,
-    creator_handle: String,
-    url: String,
+    by: MemeSearchItemBy,
+    image: MemeSearchItemImage,
     votes_total: Option<u64>,
     prompts: Option<MemePromptSet>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MemeSearchItemBy {
+    name: String,
+    handle: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MemeSearchItemImage {
+    url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -179,15 +189,15 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
     let character_query = if state.character == "normal" {
         "".into()
     } else {
-        format!("&character_id={}", state.character)
+        format!("&deck_id={}", state.character)
     };
     let api_url = format!(
-        "{}/v1/search?limit=10&start=0&interval=today&sort_by=recent&include_prompts=true{}",
+        "{}/v2/posts/search?limit=10&start=0&interval=week&sort_by=recent&include_prompts=true{}",
         MEMEDECK_API,
         character_query
     );
 
-    //println!("pinging {api_url} for {}", state.character);
+    println!("pinging {api_url} for {}", state.character);
     match send_request_await_response(
         Method::GET,
         url::Url::parse(&api_url).unwrap(),
@@ -197,9 +207,9 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
     ) {
         Ok(resp) => {
             let body = resp.body();
-            //println!("{}", String::from_utf8_lossy(body));
+            println!("{}", String::from_utf8_lossy(body));
             let meme_search_response: MemeSearchResponse = serde_json::from_slice(body)?;
-            //println!("got memedeck api response with {} memes", meme_search_response.memes.len());
+            println!("got memedeck api response with {} memes", meme_search_response.memes.len());
             if meme_search_response.memes.len() > 0 {
                 for meme in meme_search_response.memes {
                     let send_meme = meme.clone();
@@ -262,8 +272,8 @@ fn format_and_send(prompt: &str, newest_meme: &MemeSearchItem, char_name: &str, 
     let msg = format!(
         "<a href='https://memedeck.xyz/home/{}'>{new_char_str}</a> created by <a href='https://memedeck.xyz/u/{}'>{}</a>!{prompt_str}",
         newest_meme.id,
-        newest_meme.creator_handle,
-        newest_meme.creator_name,
+        newest_meme.by.handle,
+        newest_meme.by.name,
     );
     match send_bot_message(&msg, state.chat_id, &state.tg_address) {
         Ok(_) => Ok(()),

@@ -53,7 +53,6 @@ struct MemeSearchResponse {
 struct MemeSearchItem {
     id: String,
     by: MemeSearchItemBy,
-    image: MemeSearchItemImage,
     votes_total: Option<u64>,
     prompts: Option<MemePromptSet>,
 }
@@ -62,11 +61,6 @@ struct MemeSearchItem {
 struct MemeSearchItemBy {
     name: String,
     handle: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct MemeSearchItemImage {
-    url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

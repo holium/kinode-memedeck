@@ -201,9 +201,9 @@ fn req_api(state: &mut WorkerState) -> anyhow::Result<()> {
     ) {
         Ok(resp) => {
             let body = resp.body();
-            println!("{}", String::from_utf8_lossy(body));
+            //println!("{}", String::from_utf8_lossy(body));
             let meme_search_response: MemeSearchResponse = serde_json::from_slice(body)?;
-            println!("got memedeck api response with {} memes", meme_search_response.memes.len());
+            //println!("got memedeck api response with {} memes", meme_search_response.memes.len());
             if meme_search_response.memes.len() > 0 {
                 for meme in meme_search_response.memes {
                     let send_meme = meme.clone();

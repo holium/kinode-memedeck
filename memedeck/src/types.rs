@@ -130,26 +130,23 @@ impl MemeDeckState {
     }
 
     pub fn load() -> MemeDeckState {
-        match get_typed_state(|bytes| Ok(bincode::deserialize::<MemeDeckState>(bytes)?)) {
-            Some(s) => s,
-            None => MemeDeckState {
-                twitter: TwitterRequestToken::new(),
-                oauth_verifier: String::new(),
-                twitter_access: TwitterAccessToken::new(),
-                profile: None,
-                following: Vec::new(),
-                blocked: Vec::new(),
-                public_address: String::new(),
-                api_cookie: None,
-                telegram_token: None,
-                tg_process_address: None,
-                tg_chat_id: None,
-                tg_character_id: None,
-                tg_posts_per_hour: 60,
-                timer_is_set: false,
-                should_create_images_dir: true,
-            },
-        }
+        get_typed_state(|bytes| bincode::deserialize::<MemeDeckState>(bytes)).unwrap_or(MemeDeckState {
+            twitter: TwitterRequestToken::new(),
+            oauth_verifier: String::new(),
+            twitter_access: TwitterAccessToken::new(),
+            profile: None,
+            following: Vec::new(),
+            blocked: Vec::new(),
+            public_address: String::new(),
+            api_cookie: None,
+            telegram_token: None,
+            tg_process_address: None,
+            tg_chat_id: None,
+            tg_character_id: None,
+            tg_posts_per_hour: 60,
+            timer_is_set: false,
+            should_create_images_dir: true,
+        })
     }
 }
 

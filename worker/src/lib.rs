@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use kinode_process_lib::{
     await_message, call_init, println, get_typed_state, set_state,
     Address, Message, Response,
-    http::{Method, send_request_await_response},
+    http::{Method, client::send_request_await_response},
     timer::set_timer,
 };
 use serde::{Serialize, Deserialize};
@@ -27,19 +27,16 @@ impl WorkerState {
     }
 
     pub fn load(our: &Address) -> WorkerState {
-        match get_typed_state(|bytes| Ok(bincode::deserialize::<WorkerState>(bytes)?)) {
-            Some(s) => s,
-            None => WorkerState {
-                chat_id: 0,
-                character: "".into(),
-                tg_address: our.clone(),
-                cookie: "".into(),
-                posted_memes: vec![],
-                should_kill: false,
-                query_interval: 60,
-                vote_minimum: 0,
-            },
-        }
+        get_typed_state(|bytes| bincode::deserialize::<WorkerState>(bytes)).unwrap_or(WorkerState {
+            chat_id: 0,
+            character: "".into(),
+            tg_address: our.clone(),
+            cookie: "".into(),
+            posted_memes: vec![],
+            should_kill: false,
+            query_interval: 60,
+            vote_minimum: 0,
+        })
     }
 }
 
@@ -116,7 +113,10 @@ fn handle_message(
                     println!("{our} worker changing vote_minimum to {min}");
                     state.vote_minimum = min;
                     state.save();
-                    Response::new().body(b"ack").send()
+                    match Response::new().body(b"ack").send() {
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(anyhow::anyhow!("{e}")),
+                    }
                 },
 
                 // interval = ms until next query of MEMEDECK_API
@@ -125,7 +125,10 @@ fn handle_message(
                     println!("{our} worker changing query interval to {interval}");
                     state.query_interval = interval;
                     state.save();
-                    Response::new().body(b"ack").send()
+                    match Response::new().body(b"ack").send() {
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(anyhow::anyhow!("{e}")),
+                    }
                 },
 
                 WorkerRequest::Initialize {
@@ -149,14 +152,20 @@ fn handle_message(
                     let _ = req_api(state);
                     set_timer(state.query_interval, None);
 
-                    Response::new().body(b"ack").send()
+                    match Response::new().body(b"ack").send() {
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(anyhow::anyhow!("{e}")),
+                    }
                 },
 
                 WorkerRequest::Kill => {
                     state.should_kill = true;
                     state.save();
                     println!("{our} worker recieved kill request");
-                    Response::new().body(b"ack").send()
+                    match Response::new().body(b"ack").send() {
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(anyhow::anyhow!("{e}")),
+                    }
                 }
             }
         }

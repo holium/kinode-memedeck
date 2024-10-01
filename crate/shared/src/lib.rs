@@ -5,7 +5,7 @@ use kinode_process_lib::{
     http::{
         Method, StatusCode,
         HeaderMap, HeaderValue,
-        send_request_await_response, send_response,
+        client::send_request_await_response, server::send_response,
     },
 };
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};

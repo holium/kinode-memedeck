@@ -95,12 +95,12 @@ fn handle_http_request(
     state: &mut Option<State>,
     body: &[u8],
 ) -> anyhow::Result<()> {
-    let http_request = http::HttpServerRequest::from_bytes(body)?
+    let http_request = http::server::HttpServerRequest::from_bytes(body)?
         .request()
         .ok_or_else(|| anyhow::anyhow!("Failed to parse http request"))?;
     match http_request.method().ok() {
         Some(http::Method::OPTIONS) => {
-            let _ = http::send_response(http::StatusCode::OK, Some(default_headers()), Vec::new());
+            let _ = http::server::send_response(http::StatusCode::OK, Some(default_headers()), Vec::new());
             return Ok(());
         }
         Some(http::Method::POST) => {
@@ -137,7 +137,7 @@ fn populate_tweets(our: &Address, state: &mut Option<State>, bytes: &[u8]) -> an
         *state = Some(inner_state);
     }
 
-    http::send_response(
+    http::server::send_response(
         http::StatusCode::OK,
         Some(default_headers()),
         b"{\"message\": \"success\"}".to_vec(),
@@ -147,10 +147,6 @@ fn populate_tweets(our: &Address, state: &mut Option<State>, bytes: &[u8]) -> an
 
 call_init!(init);
 fn init(our: Address) {
-    if let Err(e) = http::serve_index_html(&our, "ui", false, true, vec!["/", "/populate"]) {
-        panic!("Error binding https paths: {:?}", e);
-    }
-
     let mut state = State::fetch();
     loop {
         match handle_message(&our, &mut state) {

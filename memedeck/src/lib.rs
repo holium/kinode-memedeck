@@ -5,12 +5,9 @@ use kinode_process_lib::{
     await_message, call_init, println, Address, ProcessId,
     Message, get_blob, http, Request, Response, spawn, OnExit,
     http::{
-        serve_ui,
-        HttpServerRequest, send_response, StatusCode,
-        bind_http_path,
-        bind_http_static_path,
-        unbind_http_path,
-        send_request_await_response, IncomingHttpRequest,
+        server::{HttpServerRequest, HttpBindingConfig, HttpServer, IncomingHttpRequest, send_response},
+        StatusCode,
+        client::send_request_await_response, 
     },
     vfs::{create_drive, open_file, create_file, open_dir},
     our_capabilities,
@@ -69,34 +66,37 @@ fn init(our: Address) {
 
     let private_paths = vec!["/", "/_next/static/*", "/trending", "/home", "/library", "/library/saved", "/library/uploads", "/search", "/telegram-bot", "/studio"];
     let public_paths = vec!["/images", "/favicon.ico"];
-    let _ = serve_ui(&our, "ui", true, false, private_paths);
-    let _ = serve_ui(&our, "ui", false, false, public_paths);
+    let mut server = HttpServer::new(30);
+    let conf = HttpBindingConfig::new(true, false, false, None);
+    let open_conf = HttpBindingConfig::new(false, false, false, None);
+    let _ = server.serve_ui(&our, "ui", private_paths, conf.clone());
+    let _ = server.serve_ui(&our, "ui", public_paths, open_conf.clone());
     //let _ = serve_ui(&our, "ui", false, false, public_paths);
     //let _ = bind_http_path("/", true, false);
-    let _ = bind_http_path("/set_tg_bot/:token/:character/:posts_per_hour", true, false);
-    let _ = bind_http_path("/new_generated_image", false, false);
-    let _ = bind_http_path("/submit_settings", false, false);
-    let _ = bind_http_path("/set_public_address", true, false);
-    let _ = bind_http_path("/v2/auth/twitter/login", true, false);
-    let _ = bind_http_path("/twitter_callback", false, false);
-    let _ = bind_http_path("/v2/images", true, false);
-    let _ = bind_http_path("/v2/memes/:meme_id", true, false);
-    let _ = bind_http_path("/v2/memes/:meme_id/composed-upload", true, false);
-    let _ = bind_http_path("/v2/memes/:meme_id/panel/:panel_id", true, false);
-    let _ = bind_http_path("/v2/memes/:meme_id/panel/:panel_id/faceswap-upload", true, false);
-    let _ = bind_http_path("/v1/*", true, false);
-    let _ = bind_http_path("/v2/*", true, false);
-    let _ = bind_http_path("/deck/edit/:deck_id", true, false);
-    let _ = bind_http_path("/deck/:deck_id", true, false);
-    let _ = bind_http_path("/home/:meme_id", true, false);
-    let _ = bind_http_path("/trending/:meme_id", true, false);
-    let _ = bind_http_path("/u/:uid/bookmarks", true, false);
-    let _ = bind_http_path("/u/:uid/drafts", true, false);
-    let _ = bind_http_path("/u/:uid/decks", true, false);
-    let _ = bind_http_path("/u/:uid", true, false);
-    let _ = bind_http_path("/deck/:id", true, false);
-    let _ = bind_http_path("/deck/:id/edit", true, false);
-    let _ = bind_http_path("/_next/image", true, false);
+    let _ = server.bind_http_path("/set_tg_bot/:token/:character/:posts_per_hour", conf.clone());
+    let _ = server.bind_http_path("/new_generated_image", open_conf.clone());
+    let _ = server.bind_http_path("/submit_settings", open_conf.clone());
+    let _ = server.bind_http_path("/set_public_address", conf.clone());
+    let _ = server.bind_http_path("/v2/auth/twitter/login", conf.clone());
+    let _ = server.bind_http_path("/twitter_callback", open_conf);
+    let _ = server.bind_http_path("/v2/images", conf.clone());
+    let _ = server.bind_http_path("/v2/memes/:meme_id", conf.clone());
+    let _ = server.bind_http_path("/v2/memes/:meme_id/composed-upload", conf.clone());
+    let _ = server.bind_http_path("/v2/memes/:meme_id/panel/:panel_id", conf.clone());
+    let _ = server.bind_http_path("/v2/memes/:meme_id/panel/:panel_id/faceswap-upload", conf.clone());
+    let _ = server.bind_http_path("/v1/*", conf.clone());
+    let _ = server.bind_http_path("/v2/*", conf.clone());
+    let _ = server.bind_http_path("/deck/edit/:deck_id", conf.clone());
+    let _ = server.bind_http_path("/deck/:deck_id", conf.clone());
+    let _ = server.bind_http_path("/home/:meme_id", conf.clone());
+    let _ = server.bind_http_path("/trending/:meme_id", conf.clone());
+    let _ = server.bind_http_path("/u/:uid/bookmarks", conf.clone());
+    let _ = server.bind_http_path("/u/:uid/drafts", conf.clone());
+    let _ = server.bind_http_path("/u/:uid/decks", conf.clone());
+    let _ = server.bind_http_path("/u/:uid", conf.clone());
+    let _ = server.bind_http_path("/deck/:id", conf.clone());
+    let _ = server.bind_http_path("/deck/:id/edit", conf.clone());
+    let _ = server.bind_http_path("/_next/image", conf.clone());
 
     let mut state = MemeDeckState::load();
 
@@ -128,7 +128,7 @@ fn init(our: Address) {
             let bind_path_vec: Vec<&str> = iter.collect();
             let bind_path = bind_path_vec.join("/");
             println!("binding {bind_path}");
-            let _ = bind_http_static_path(bind_path, false, false, Some(format!("image/{content_type}")), contents);
+            let _ = server.bind_http_static_path(bind_path, false, false, Some(format!("image/{content_type}")), contents);
         }
         println!("done binding static images");
     } else {
@@ -153,7 +153,7 @@ fn init(our: Address) {
                 println!("{}: got network error: {send_error:?}", our);
                 continue;
             }
-            Ok(message) => match handle_request(&our, &mut state, &message) {
+            Ok(message) => match handle_request(&our, &mut state, &message, &mut server) {
                 Ok(()) => continue,
                 Err(e) => println!("error handling request: {:?}", e),
             },
@@ -165,12 +165,13 @@ fn handle_request(
     our: &Address,
     state: &mut MemeDeckState,
     message: &Message,
+    server: &mut HttpServer,
 ) -> anyhow::Result<()> {
     let proc = message.source().process.clone();
     if message.source().node == our.node && proc == "http_server:distro:sys"
     {
         //println!("handle_http_server_request");
-        handle_http_server_request(our, &message.body(), state)
+        handle_http_server_request(our, &message.body(), state, server)
     } else if message.source().node == our.node && proc.package_name == "terminal" && proc.publisher_node == "sys" {
         //println!("handle_admin_request");
         handle_admin_request(our, &message.body(), state)
@@ -213,7 +214,10 @@ fn handle_kinode_meme_request(
             let response = Request::to(LLM_ADDRESS)
                 .body(request)
                 .send_and_await_response(10)??;
-            Response::new().body(response.body()).send()
+            match Response::new().body(response.body()).send() {
+                Ok(_) => Ok(()),
+                Err(e) => Err(anyhow::anyhow!("{e}")),
+            }
         }
     }
 }
@@ -222,6 +226,7 @@ fn handle_http_server_request(
     our: &Address,
     body: &[u8],
     state: &mut MemeDeckState,
+    server: &mut HttpServer,
 ) -> anyhow::Result<()> {
     let server_request = serde_json::from_slice::<HttpServerRequest>(body).map_err(|e| {
         println!("Failed to parse server request: {:?}", e);
@@ -341,7 +346,7 @@ fn handle_http_server_request(
                             file.write(&bytes)?;
                             // 2. Make the file publically accessible
                             let access_path = format!("images/{}.{}", details.name, details.filetype);
-                            bind_http_static_path(
+                            server.bind_http_static_path(
                                 &access_path,
                                 false,
                                 false,
@@ -395,12 +400,12 @@ fn handle_http_server_request(
                                 )?,
                             ))
                         }
-                        "/v2/images" => create_meme(our, state),
+                        "/v2/images" => create_meme(our, state, server),
                         _ if { r_path.starts_with("/v2/memes/") && r_path.ends_with("/composed-upload") } => {
                             let parts: Vec<&str> = r_path.split("/").collect();
                             let meme_id = parts[3];
                             let meme_id_str = meme_id.to_string();
-                            return composed_upload(state, &meme_id_str);
+                            return composed_upload(state, &meme_id_str, server);
                         }
                         _ if { r_path.starts_with("/v2/memes/") && r_path.ends_with("/faceswap-upload") } => {
                             let parts: Vec<&str> = r_path.split("/").collect();
@@ -408,7 +413,7 @@ fn handle_http_server_request(
                             let meme_id_str = meme_id.to_string();
                             let panel_id = parts[5];
                             let panel_id_str = panel_id.to_string();
-                            return faceswap_upload(state, &meme_id_str, &panel_id_str);
+                            return faceswap_upload(state, &meme_id_str, &panel_id_str, server);
                         }
                         _ if { r_path.starts_with("/v1/") || r_path.starts_with("/v2/") } => {
                             let blob = match get_blob() {
@@ -455,7 +460,7 @@ fn handle_http_server_request(
                 "DELETE" => {
                     //println!("DELETE {r_path}");
                     match b_path {
-                        "/v2/memes/:meme_id" => delete_meme(state, request.url_params().get("meme_id").unwrap()),
+                        "/v2/memes/:meme_id" => delete_meme(state, request.url_params().get("meme_id").unwrap(), server),
                         _ if { r_path.starts_with("/v1/") || r_path.starts_with("/v2/") } => {
                             let blob = match get_blob() {
                                 Some(blob) => blob.bytes,
@@ -751,7 +756,7 @@ Don't be vague about the topics, talk about the exact specific topic. It's bette
     Ok(())
 }
 
-fn create_meme(our: &Address, state: &mut MemeDeckState) -> anyhow::Result<()> {
+fn create_meme(our: &Address, state: &mut MemeDeckState, server: &mut HttpServer) -> anyhow::Result<()> {
     let Some(blob) = get_blob() else {
         return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![]));
     };
@@ -782,7 +787,7 @@ fn create_meme(our: &Address, state: &mut MemeDeckState) -> anyhow::Result<()> {
     let file = create_file(&format!("{}/img/{filename}", our.package_id()), None)?;
     file.write(&bytes)?;
     // 2. Make the file publically accessible
-    bind_http_static_path(&filename, false, false, Some(upload_data.filetype.clone()), bytes)?;
+    server.bind_http_static_path(&filename, false, false, Some(upload_data.filetype.clone()), bytes)?;
     // 3. POST it to the api, so that it can save the metadata to the graph
     upload_data.filename = filename;
     let mut api_headers = HashMap::new();
@@ -805,10 +810,10 @@ fn create_meme(our: &Address, state: &mut MemeDeckState) -> anyhow::Result<()> {
     }
 }
 
-fn delete_meme(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Result<()> {
+fn delete_meme(state: &mut MemeDeckState, meme_id: &String, server: &mut HttpServer) -> anyhow::Result<()> {
     // 1. unbind the http path to the meme
     let filename = format!("images/{meme_id}");
-    unbind_http_path(&filename)?;
+    server.unbind_http_path(&filename)?;
     // 2. forward the request to the api for metadata
     let mut api_headers = HashMap::new();
     api_headers.insert("content-type".to_string(), "application/json".to_string());
@@ -830,7 +835,7 @@ fn delete_meme(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Result<()
     }
 }
 
-fn composed_upload(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Result<()> {
+fn composed_upload(state: &mut MemeDeckState, meme_id: &String, server: &mut HttpServer) -> anyhow::Result<()> {
     let Some(blob) = get_blob() else {
         return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![]));
     };
@@ -847,7 +852,7 @@ fn composed_upload(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Resul
         Some(b) => b,
         None => return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![])),
     };
-    bind_http_static_path(&filename, false, false, Some(upload_data.filetype.clone()), bytes)?;
+    server.bind_http_static_path(&filename, false, false, Some(upload_data.filetype.clone()), bytes)?;
 
     // Remove the `bytes` field since we've uploaded to Kinode
     let mut upload_data_value = serde_json::to_value(&upload_data)?;
@@ -883,7 +888,7 @@ fn composed_upload(state: &mut MemeDeckState, meme_id: &String) -> anyhow::Resul
     }
 }
 
-fn faceswap_upload(state: &mut MemeDeckState, meme_id: &String, panel_id: &String) -> anyhow::Result<()> {
+fn faceswap_upload(state: &mut MemeDeckState, meme_id: &String, panel_id: &String, server: &mut HttpServer) -> anyhow::Result<()> {
     let Some(blob) = get_blob() else {
         return Ok(send_response(StatusCode::BAD_REQUEST, None, vec![]));
     };
@@ -897,7 +902,7 @@ fn faceswap_upload(state: &mut MemeDeckState, meme_id: &String, panel_id: &Strin
     
     // 2. Make the file publically accessible
     let bytes = upload_data.bytes.clone();
-    bind_http_static_path(&filename, false, false, Some(upload_data.filetype.clone()), bytes)?;
+    server.bind_http_static_path(&filename, false, false, Some(upload_data.filetype.clone()), bytes)?;
 
     // Remove the `bytes` field since we've uploaded to Kinode
     let mut upload_data_value = serde_json::to_value(&upload_data)?;

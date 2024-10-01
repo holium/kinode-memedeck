@@ -250,7 +250,7 @@ fn handle_http_server_request(
                     // Route to appropriate endpoint based on the path
                     match b_path {
                         "/twitter_callback" => get_oauth_callback(our, state, headers, request),
-                        "/v2/auth/twitter/login" => get_login_with_twitter(our, state, request),
+                        "/v2/auth/twitter/login" => get_login_with_twitter(state, request),
                         "/_next/image" => {
                             let params = request.query_params();
                             headers.remove("Content-Type");
@@ -981,7 +981,7 @@ fn get_oauth_callback(
     }
 }
 
-fn get_login_with_twitter(our: &Address, state: &mut MemeDeckState, request: IncomingHttpRequest) -> anyhow::Result<()> {
+fn get_login_with_twitter(state: &mut MemeDeckState, request: IncomingHttpRequest) -> anyhow::Result<()> {
     let url = request.query_params().get("redirect_url").unwrap();
     let redirect = format!("{MEMEDECK_API}/v2/auth/twitter/kinode_login?redirect_url={url}&kinode_location={}", state.public_address);
     let mut headers = HashMap::new();
